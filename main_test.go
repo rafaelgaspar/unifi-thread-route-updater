@@ -1213,6 +1213,72 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 	})
 }
 
+// TestGetUbiquityConfigEdgeCases tests edge cases for configuration parsing
+func TestGetUbiquityConfigEdgeCases(t *testing.T) {
+	// Save original environment
+	originalEnv := map[string]string{
+		"UBIQUITY_ROUTER_HOSTNAME": os.Getenv("UBIQUITY_ROUTER_HOSTNAME"),
+		"UBIQUITY_USERNAME":        os.Getenv("UBIQUITY_USERNAME"),
+		"UBIQUITY_PASSWORD":        os.Getenv("UBIQUITY_PASSWORD"),
+		"UBIQUITY_INSECURE_SSL":    os.Getenv("UBIQUITY_INSECURE_SSL"),
+		"ROUTE_GRACE_PERIOD":       os.Getenv("ROUTE_GRACE_PERIOD"),
+	}
+	
+	// Restore environment after test
+	defer func() {
+		for key, value := range originalEnv {
+			if value == "" {
+				os.Unsetenv(key)
+			} else {
+				os.Setenv(key, value)
+			}
+		}
+	}()
+
+	t.Run("Invalid grace period should use default", func(t *testing.T) {
+		os.Setenv("ROUTE_GRACE_PERIOD", "invalid-duration")
+		config := getUbiquityConfig()
+		expected := 10 * time.Minute // Default grace period
+		if config.RouteGracePeriod != expected {
+			t.Errorf("Expected grace period %v for invalid duration, got %v", expected, config.RouteGracePeriod)
+		}
+	})
+
+	t.Run("Empty grace period should use default", func(t *testing.T) {
+		os.Setenv("ROUTE_GRACE_PERIOD", "")
+		config := getUbiquityConfig()
+		expected := 10 * time.Minute // Default grace period
+		if config.RouteGracePeriod != expected {
+			t.Errorf("Expected grace period %v for empty duration, got %v", expected, config.RouteGracePeriod)
+		}
+	})
+
+	t.Run("Valid grace period should be parsed", func(t *testing.T) {
+		os.Setenv("ROUTE_GRACE_PERIOD", "5m")
+		config := getUbiquityConfig()
+		expected := 5 * time.Minute
+		if config.RouteGracePeriod != expected {
+			t.Errorf("Expected grace period %v, got %v", expected, config.RouteGracePeriod)
+		}
+	})
+
+	t.Run("Insecure SSL should be parsed correctly", func(t *testing.T) {
+		os.Setenv("UBIQUITY_INSECURE_SSL", "true")
+		config := getUbiquityConfig()
+		if !config.InsecureSSL {
+			t.Errorf("Expected InsecureSSL to be true, got false")
+		}
+	})
+
+	t.Run("Secure SSL should be parsed correctly", func(t *testing.T) {
+		os.Setenv("UBIQUITY_INSECURE_SSL", "false")
+		config := getUbiquityConfig()
+		if config.InsecureSSL {
+			t.Errorf("Expected InsecureSSL to be false, got true")
+		}
+	})
+}
+
 // TestExtractRouterNameEdgeCases tests edge cases for router name extraction
 func TestExtractRouterNameEdgeCases(t *testing.T) {
 	tests := []struct {
