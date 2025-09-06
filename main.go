@@ -848,30 +848,34 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	desiredRoutes := convertToUbiquityRoutes(routes)
 
 	// Debug: Print current and desired routes
-	logDebug("Current routes from API: %d", len(currentRoutes))
+	fmt.Printf("🔍 Current routes from API: %d\n", len(currentRoutes))
 	for i, route := range currentRoutes {
-		logDebug("  [%d] %s -> %s (%s)", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 	}
-	logDebug("Desired routes: %d", len(desiredRoutes))
+	fmt.Printf("🔍 Desired routes: %d\n", len(desiredRoutes))
 	for i, route := range desiredRoutes {
-		logDebug("  [%d] %s -> %s (%s)", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 	}
 
 	// Find routes to add and remove
 	routesToAdd, routesToRemove := compareRoutes(currentRoutes, desiredRoutes)
+	fmt.Printf("🔍 Routes to add: %d, Routes to remove: %d\n", len(routesToAdd), len(routesToRemove))
 
 	// Filter out routes we've already added (in-memory tracking)
 	var newRoutesToAdd []UbiquityStaticRoute
+	fmt.Printf("🔍 In-memory tracking: %d routes already tracked\n", len(state.AddedRoutes))
 	for _, route := range routesToAdd {
 		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		if !state.AddedRoutes[key] {
 			newRoutesToAdd = append(newRoutesToAdd, route)
 			state.AddedRoutes[key] = true // Mark as added
+			fmt.Printf("🔍 Adding new route to tracking: %s\n", key)
 		} else {
 			fmt.Printf("⏭️  Skipping already added route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		}
 	}
 	routesToAdd = newRoutesToAdd
+	fmt.Printf("🔍 Final routes to add after in-memory filtering: %d\n", len(routesToAdd))
 
 	// Add a small delay after adding routes to allow them to be indexed
 	if len(routesToAdd) > 0 {
