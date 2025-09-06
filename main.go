@@ -592,7 +592,7 @@ func isRoutableRouterAddress(ip net.IP) bool {
 			return false
 		}
 
-		// fdc0::/7 - Unique Local Addresses (ULA) - Thread Border Routers should use public addresses
+		// fc00::/7 - Unique Local Addresses (ULA) - Thread Border Routers should use public addresses
 		if len(ip) >= 1 && (ip[0]&0xfe) == 0xfc {
 			return false
 		}

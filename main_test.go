@@ -70,13 +70,13 @@ func TestGenerateRoutes(t *testing.T) {
 	routers := []ThreadBorderRouter{
 		{
 			Name:     "ThreadRouter1",
-			IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::ff"), // Different CIDR from devices
-			CIDR:     "fd00:1234:5678:9abc::/64",
+			IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"), // Different CIDR from devices, public IPv6
+			CIDR:     "2001:4860:4860:1234::/64",
 		},
 		{
 			Name:     "ThreadRouter2",
-			IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::fe"), // Same CIDR as ThreadRouter1
-			CIDR:     "fd00:1234:5678:9abc::/64",
+			IPv6Addr: net.ParseIP("2001:4860:4860:1234::fe"), // Same CIDR as ThreadRouter1, public IPv6
+			CIDR:     "2001:4860:4860:1234::/64",
 		},
 	}
 
@@ -382,8 +382,8 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 		routers := []ThreadBorderRouter{
 			{
 				Name:     "Router1",
-				IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::ff"),
-				CIDR:     "fd00:1234:5678:9abc::/64",
+				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"),
+				CIDR:     "2001:4860:4860:1234::/64",
 			},
 		}
 
@@ -420,8 +420,8 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 		routers := []ThreadBorderRouter{
 			{
 				Name:     "Router1",
-				IPv6Addr: net.ParseIP("fd00:5678:9abc:def0::ff"),
-				CIDR:     "fd00:5678:9abc:def0::/64",
+				IPv6Addr: net.ParseIP("2001:4860:4860:5678::ff"),
+				CIDR:     "2001:4860:4860:5678::/64",
 			},
 		}
 
@@ -453,13 +453,13 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 		routers := []ThreadBorderRouter{
 			{
 				Name:     "Router1",
-				IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::ff"), // Different CIDR from devices
-				CIDR:     "fd00:1234:5678:9abc::/64",
+				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"), // Different CIDR from devices, public IPv6
+				CIDR:     "2001:4860:4860:1234::/64",
 			},
 			{
 				Name:     "Router2",
-				IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::fe"), // Same CIDR as Router1
-				CIDR:     "fd00:1234:5678:9abc::/64",
+				IPv6Addr: net.ParseIP("2001:4860:4860:1234::fe"), // Same CIDR as Router1, public IPv6
+				CIDR:     "2001:4860:4860:1234::/64",
 			},
 		}
 
