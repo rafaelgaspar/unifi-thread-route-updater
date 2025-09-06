@@ -1154,8 +1154,8 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	client := createHTTPClient(config)
 
-	// Try the UDM Pro endpoint first (same as the working read endpoint)
-	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
+	// Try the legacy endpoint first (might support IPv6 better)
+	url := fmt.Sprintf("%s/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
