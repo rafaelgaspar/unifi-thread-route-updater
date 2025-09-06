@@ -37,6 +37,17 @@ func getUbiquityConfig() UbiquityConfig {
 		}
 	}
 
+	// Parse device expiration period from environment variable
+	deviceExpirationStr := os.Getenv("DEVICE_EXPIRATION")
+	deviceExpiration := 10 * time.Minute // Default: 10 minutes
+	if deviceExpirationStr != "" {
+		if parsed, err := time.ParseDuration(deviceExpirationStr); err == nil {
+			deviceExpiration = parsed
+		} else {
+			logWarn("Invalid DEVICE_EXPIRATION format '%s', using default 10m", deviceExpirationStr)
+		}
+	}
+
 	return UbiquityConfig{
 		RouterHostname:   routerHostname,
 		Username:         username,
@@ -45,5 +56,6 @@ func getUbiquityConfig() UbiquityConfig {
 		InsecureSSL:      os.Getenv("UBIQUITY_INSECURE_SSL") == "true",
 		Enabled:          enabled,
 		RouteGracePeriod: gracePeriod,
+		DeviceExpiration: deviceExpiration,
 	}
 }

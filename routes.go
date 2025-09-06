@@ -108,6 +108,7 @@ func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
 				Name:     entry.Instance,
 				IPv6Addr: ip,
 				Services: []string{"_matter._tcp"},
+				LastSeen: time.Now(),
 			}
 
 			// Check if device already exists
@@ -179,6 +180,7 @@ func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 				Name:     extractRouterName(entry.Instance),
 				IPv6Addr: ip,
 				CIDR:     calculateCIDR64(ip),
+				LastSeen: time.Now(),
 			}
 
 			// Check if router already exists
@@ -210,31 +212,121 @@ func periodicRefresh(state *DaemonState, done <-chan struct{}) {
 	for {
 		select {
 		case <-ticker.C:
-			// Gentle refresh - only if we haven't seen updates in a while
-			if time.Since(state.LastUpdate) > 2*time.Minute {
-				logInfo("Performing gentle refresh (no updates for %v)", time.Since(state.LastUpdate))
+			// Always perform gentle refresh and device expiration cleanup
+			logDebug("Performing periodic refresh and device expiration cleanup")
 
-				// Quick discovery without overwhelming the network
-				devices, err := discoverMatterDevices()
-				if err == nil && len(devices) > 0 {
-					state.MatterDevices = devices
-					logDebug("Gentle refresh discovered %d Matter devices", len(devices))
-				} else if err != nil {
-					logWarn("Gentle refresh failed for Matter devices: %v", err)
-				}
-
-				routers, err := discoverThreadBorderRouters()
-				if err == nil && len(routers) > 0 {
-					state.ThreadBorderRouters = routers
-					logDebug("Gentle refresh discovered %d Thread Border Routers", len(routers))
-				} else if err != nil {
-					logWarn("Gentle refresh failed for Thread Border Routers: %v", err)
-				}
-
-				state.LastUpdate = time.Now()
+			// Remove expired devices
+			expiredDevices := removeExpiredDevices(state)
+			expiredRouters := removeExpiredRouters(state)
+			
+			if expiredDevices > 0 || expiredRouters > 0 {
+				logInfo("Removed %d expired Matter devices and %d expired Thread Border Routers", expiredDevices, expiredRouters)
 			}
+
+			// Quick discovery to catch any devices that might have been missed
+			devices, err := discoverMatterDevices()
+			if err == nil && len(devices) > 0 {
+				mergeDevices(state, devices)
+				logDebug("Periodic refresh discovered %d Matter devices", len(devices))
+			} else if err != nil {
+				logWarn("Periodic refresh failed for Matter devices: %v", err)
+			}
+
+			routers, err := discoverThreadBorderRouters()
+			if err == nil && len(routers) > 0 {
+				mergeRouters(state, routers)
+				logDebug("Periodic refresh discovered %d Thread Border Routers", len(routers))
+			} else if err != nil {
+				logWarn("Periodic refresh failed for Thread Border Routers: %v", err)
+			}
+
+			state.LastUpdate = time.Now()
 		case <-done:
 			return
+		}
+	}
+}
+
+// removeExpiredDevices removes devices that haven't been seen for the expiration period
+func removeExpiredDevices(state *DaemonState) int {
+	
+	now := time.Now()
+	var remainingDevices []DeviceInfo
+	removedCount := 0
+	
+	for _, device := range state.MatterDevices {
+		if now.Sub(device.LastSeen) > state.DeviceExpiration {
+			logDebug("Removing expired Matter device: %s (%s) - last seen %v ago", 
+				device.Name, device.IPv6Addr.String(), now.Sub(device.LastSeen))
+			removedCount++
+		} else {
+			remainingDevices = append(remainingDevices, device)
+		}
+	}
+	
+	state.MatterDevices = remainingDevices
+	return removedCount
+}
+
+// removeExpiredRouters removes routers that haven't been seen for the expiration period
+func removeExpiredRouters(state *DaemonState) int {
+	
+	now := time.Now()
+	var remainingRouters []ThreadBorderRouter
+	removedCount := 0
+	
+	for _, router := range state.ThreadBorderRouters {
+		if now.Sub(router.LastSeen) > state.DeviceExpiration {
+			logDebug("Removing expired Thread Border Router: %s (%s) - last seen %v ago", 
+				router.Name, router.IPv6Addr.String(), now.Sub(router.LastSeen))
+			removedCount++
+		} else {
+			remainingRouters = append(remainingRouters, router)
+		}
+	}
+	
+	state.ThreadBorderRouters = remainingRouters
+	return removedCount
+}
+
+// mergeDevices merges newly discovered devices with existing ones
+func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
+	for _, newDevice := range newDevices {
+		found := false
+		for i, existingDevice := range state.MatterDevices {
+			if existingDevice.Name == newDevice.Name && existingDevice.IPv6Addr.Equal(newDevice.IPv6Addr) {
+				// Update existing device with new LastSeen time
+				state.MatterDevices[i] = newDevice
+				found = true
+				logDebug("Updated existing Matter device: %s (%s)", newDevice.Name, newDevice.IPv6Addr.String())
+				break
+			}
+		}
+		
+		if !found {
+			state.MatterDevices = append(state.MatterDevices, newDevice)
+			logDebug("Added new Matter device: %s (%s)", newDevice.Name, newDevice.IPv6Addr.String())
+		}
+	}
+}
+
+// mergeRouters merges newly discovered routers with existing ones
+func mergeRouters(state *DaemonState, newRouters []ThreadBorderRouter) {
+	for _, newRouter := range newRouters {
+		found := false
+		for i, existingRouter := range state.ThreadBorderRouters {
+			if existingRouter.Name == newRouter.Name && existingRouter.IPv6Addr.Equal(newRouter.IPv6Addr) {
+				// Update existing router with new LastSeen time
+				state.ThreadBorderRouters[i] = newRouter
+				found = true
+				logDebug("Updated existing Thread Border Router: %s (%s)", newRouter.Name, newRouter.IPv6Addr.String())
+				break
+			}
+		}
+		
+		if !found {
+			state.ThreadBorderRouters = append(state.ThreadBorderRouters, newRouter)
+			logDebug("Added new Thread Border Router: %s (%s)", newRouter.Name, newRouter.IPv6Addr.String())
 		}
 	}
 }

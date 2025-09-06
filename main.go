@@ -15,15 +15,19 @@ func main() {
 	logInfo("Monitoring for Matter devices and Thread Border Routers")
 	logInfo("Press Ctrl+C to stop")
 
+	// Get configuration
+	config := getUbiquityConfig()
+	
 	// Create initial state
 	state := &DaemonState{
 		MatterDevices:       []DeviceInfo{},
 		ThreadBorderRouters: []ThreadBorderRouter{},
 		Routes:              []Route{},
 		LastUpdate:          time.Now(),
-		UbiquityConfig:      getUbiquityConfig(),
+		UbiquityConfig:      config,
 		AddedRoutes:         make(map[string]bool),
 		RouteLastSeen:       make(map[string]time.Time),
+		DeviceExpiration:    config.DeviceExpiration,
 	}
 
 	// Set up signal handling for graceful shutdown

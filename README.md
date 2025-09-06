@@ -117,6 +117,7 @@ The `LOG_LEVEL` environment variable controls the verbosity of the daemon output
 - **ERROR**: Shows only critical errors
 
 Example usage:
+
 ```bash
 LOG_LEVEL=DEBUG ./thread-route-updater  # Verbose output for debugging
 LOG_LEVEL=INFO ./thread-route-updater   # Normal operation (default)
@@ -254,16 +255,19 @@ To prevent unnecessary route churn when mDNS announcements are infrequent, the a
 The daemon provides detailed status information about routes in different states:
 
 **Routes within grace period:**
+
 ```
 [INFO] Route marked for deletion: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV) - will be removed in 7m
 ```
 
 **Routes overdue for deletion:**
+
 ```
 [WARN] Route overdue for deletion: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV) - grace period expired
 ```
 
 **Routes never seen before (gets full grace period):**
+
 ```
 [INFO] Route marked for deletion: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV) - will be removed in 10m (grace period)
 ```

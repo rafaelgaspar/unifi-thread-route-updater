@@ -86,6 +86,7 @@ func discoverService(serviceType, deviceType string) ([]DeviceInfo, error) {
 				Name:     entry.Instance,
 				IPv6Addr: ip,
 				Services: []string{serviceType},
+				LastSeen: time.Now(),
 			}
 			devices = append(devices, device)
 		}
@@ -145,6 +146,7 @@ func discoverThreadService(serviceType string) ([]ThreadBorderRouter, error) {
 				Name:     extractRouterName(entry.Instance),
 				IPv6Addr: ip,
 				CIDR:     calculateCIDR64(ip),
+				LastSeen: time.Now(),
 			}
 			routers = append(routers, router)
 		}

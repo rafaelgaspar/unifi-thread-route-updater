@@ -17,9 +17,10 @@ const (
 
 // DeviceInfo represents a discovered Matter device
 type DeviceInfo struct {
-	Name     string
-	IPv6Addr net.IP
-	Services []string
+	Name      string
+	IPv6Addr  net.IP
+	Services  []string
+	LastSeen  time.Time
 }
 
 // ThreadBorderRouter represents a discovered Thread Border Router
@@ -27,6 +28,7 @@ type ThreadBorderRouter struct {
 	Name     string
 	IPv6Addr net.IP
 	CIDR     string
+	LastSeen time.Time
 }
 
 // Route represents a routing entry
@@ -45,6 +47,7 @@ type DaemonState struct {
 	UbiquityConfig      UbiquityConfig
 	AddedRoutes         map[string]bool      // Track routes we've added to prevent duplicates
 	RouteLastSeen       map[string]time.Time // Track when each route was last seen
+	DeviceExpiration    time.Duration        // How long to keep devices that haven't been seen
 }
 
 // UbiquityConfig holds configuration for Ubiquity router API
@@ -60,6 +63,7 @@ type UbiquityConfig struct {
 	SessionCookie    string        // Session cookie for API requests
 	LastLoginTime    int64         // Timestamp of last successful login
 	RouteGracePeriod time.Duration // Grace period before removing routes
+	DeviceExpiration time.Duration // How long to keep devices that haven't been seen
 }
 
 // UbiquityStaticRoute represents a static route in Ubiquity format
