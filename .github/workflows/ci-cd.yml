@@ -107,14 +107,14 @@ jobs:
 
     - name: Package Helm chart
       run: |
-        helm package helm/thread-route-updater --destination ./packages
+        helm package chart/thread-route-updater --destination ./packages
 
     - name: Generate chart index
       run: |
         helm repo index ./packages --url https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
 
     - name: Upload Helm chart packages
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: helm-chart-packages
         path: ./packages/
