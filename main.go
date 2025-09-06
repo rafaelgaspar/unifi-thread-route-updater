@@ -183,12 +183,15 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	// Create done channel for graceful shutdown
+	done := make(chan struct{})
+
 	// Start continuous monitoring
-	go monitorMatterDevices(state)
-	go monitorThreadBorderRouters(state)
+	go monitorMatterDevices(state, done)
+	go monitorThreadBorderRouters(state, done)
 
 	// Periodic refresh every 5 minutes to catch devices that might have been missed
-	go periodicRefresh(state)
+	go periodicRefresh(state, done)
 
 	// Display loop
 	ticker := time.NewTicker(5 * time.Second)
@@ -200,13 +203,14 @@ func main() {
 			displayCurrentState(state)
 		case sig := <-sigChan:
 			fmt.Printf("\n🛑 Received signal %v, shutting down gracefully...\n", sig)
+			close(done)
 			return
 		}
 	}
 }
 
 // monitorMatterDevices continuously monitors for Matter devices
-func monitorMatterDevices(state *DaemonState) {
+func monitorMatterDevices(state *DaemonState, done <-chan struct{}) {
 	// Initial discovery
 	devices, err := discoverMatterDevices()
 	if err != nil {
@@ -217,11 +221,11 @@ func monitorMatterDevices(state *DaemonState) {
 	}
 
 	// Then just listen for announcements (passive monitoring)
-	listenForMatterDevices(state)
+	listenForMatterDevices(state, done)
 }
 
 // monitorThreadBorderRouters continuously monitors for Thread Border Routers
-func monitorThreadBorderRouters(state *DaemonState) {
+func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	// Initial discovery
 	routers, err := discoverThreadBorderRouters()
 	if err != nil {
@@ -232,7 +236,7 @@ func monitorThreadBorderRouters(state *DaemonState) {
 	}
 
 	// Then just listen for announcements (passive monitoring)
-	listenForThreadBorderRouters(state)
+	listenForThreadBorderRouters(state, done)
 }
 
 // displayCurrentState displays the current state of discovered devices and routes
@@ -582,7 +586,7 @@ func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route 
 }
 
 // listenForMatterDevices passively listens for Matter device announcements
-func listenForMatterDevices(state *DaemonState) {
+func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
 	resolver, err := zeroconf.NewResolver(nil)
 	if err != nil {
 		fmt.Printf("❌ Failed to initialize resolver for Matter devices: %v\n", err)
@@ -590,7 +594,6 @@ func listenForMatterDevices(state *DaemonState) {
 	}
 
 	entries := make(chan *zeroconf.ServiceEntry)
-	done := make(chan bool)
 
 	// Start listening for announcements
 	go func() {
@@ -649,12 +652,10 @@ func listenForMatterDevices(state *DaemonState) {
 
 		state.LastUpdate = time.Now()
 	}
-
-	close(done)
 }
 
 // listenForThreadBorderRouters passively listens for Thread Border Router announcements
-func listenForThreadBorderRouters(state *DaemonState) {
+func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	resolver, err := zeroconf.NewResolver(nil)
 	if err != nil {
 		fmt.Printf("❌ Failed to initialize resolver for Thread Border Routers: %v\n", err)
@@ -662,7 +663,6 @@ func listenForThreadBorderRouters(state *DaemonState) {
 	}
 
 	entries := make(chan *zeroconf.ServiceEntry)
-	done := make(chan bool)
 
 	// Start listening for announcements
 	go func() {
@@ -721,12 +721,10 @@ func listenForThreadBorderRouters(state *DaemonState) {
 
 		state.LastUpdate = time.Now()
 	}
-
-	close(done)
 }
 
 // periodicRefresh performs a gentle refresh every 5 minutes to catch any devices that might have been missed
-func periodicRefresh(state *DaemonState) {
+func periodicRefresh(state *DaemonState, done <-chan struct{}) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
@@ -750,6 +748,8 @@ func periodicRefresh(state *DaemonState) {
 
 				state.LastUpdate = time.Now()
 			}
+		case <-done:
+			return
 		}
 	}
 }
