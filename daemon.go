@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"time"
 )
 
@@ -45,7 +46,7 @@ func displayCurrentState(state *DaemonState) {
 	state.Routes = routes
 
 	// Log current status
-	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d routes", 
+	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d routes detected", 
 		len(state.MatterDevices), len(state.ThreadBorderRouters), len(routes))
 
 	// Debug logging for detailed device information
@@ -53,18 +54,43 @@ func displayCurrentState(state *DaemonState) {
 	logDebug("Thread Border Routers: %+v", state.ThreadBorderRouters)
 	logDebug("Generated routes: %+v", routes)
 
-	// Log route changes if any
+	// Show detected routes
 	if len(routes) > 0 {
-		logInfo("Active routes: %d routes configured", len(routes))
+		logInfo("Detected routes: %d routes", len(routes))
 		for _, route := range routes {
-			logDebug("Route: %s -> %s (%s)", route.CIDR, route.ThreadRouterIPv6, route.RouterName)
-		}
-
-		// Update Ubiquity router if enabled
-		if state.UbiquityConfig.Enabled {
-			go updateUbiquityRoutes(state, routes)
+			logDebug("Detected route: %s -> %s (%s)", route.CIDR, route.ThreadRouterIPv6, route.RouterName)
 		}
 	} else {
-		logWarn("No routes available (no Thread networks detected)")
+		logWarn("No routes detected (no Thread networks found)")
+	}
+
+	// Show configured routes in Ubiquity router if enabled
+	if state.UbiquityConfig.Enabled {
+		configuredRoutes, err := getUbiquityStaticRoutes(state.UbiquityConfig)
+		if err != nil {
+			logWarn("Failed to get configured routes from Ubiquity router: %v", err)
+		} else {
+			// Filter to only show Thread routes (routes with our name pattern)
+			threadRoutes := []UbiquityStaticRoute{}
+			for _, route := range configuredRoutes {
+				if strings.Contains(route.Name, "Thread route via") {
+					threadRoutes = append(threadRoutes, route)
+				}
+			}
+			
+			if len(threadRoutes) > 0 {
+				logInfo("Configured routes: %d Thread routes in Ubiquity router", len(threadRoutes))
+				for _, route := range threadRoutes {
+					logDebug("Configured route: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+				}
+			} else {
+				logInfo("Configured routes: 0 Thread routes in Ubiquity router")
+			}
+		}
+	}
+
+	// Update Ubiquity router if enabled
+	if state.UbiquityConfig.Enabled {
+		go updateUbiquityRoutes(state, routes)
 	}
 }
