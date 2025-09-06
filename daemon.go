@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -90,8 +91,41 @@ func displayCurrentState(state *DaemonState) {
 				
 				if len(threadRoutes) > 0 {
 					logInfo("Configured routes: %d Thread routes in Ubiquity router", len(threadRoutes))
+					
+					// Check each configured route against detected routes
 					for _, route := range threadRoutes {
-						logDebug("Configured route: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+						// Check if this route is still detected
+						stillDetected := false
+						for _, detectedRoute := range routes {
+							if detectedRoute.CIDR == route.StaticRouteNetwork && detectedRoute.ThreadRouterIPv6 == route.StaticRouteNexthop {
+								stillDetected = true
+								break
+							}
+						}
+						
+						if stillDetected {
+							logDebug("Configured route: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+						} else {
+							// Route is configured but no longer detected - check grace period
+							key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+							if lastSeen, hasLastSeen := state.RouteLastSeen[key]; hasLastSeen {
+								timeSinceLastSeen := time.Since(lastSeen)
+								if timeSinceLastSeen < state.UbiquityConfig.RouteGracePeriod {
+									remaining := state.UbiquityConfig.RouteGracePeriod - timeSinceLastSeen
+									remainingStr := formatDuration(remaining)
+									logInfo("Route marked for deletion: %s -> %s (%s) - will be removed in %s", 
+										route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name, remainingStr)
+								} else {
+									logWarn("Route overdue for deletion: %s -> %s (%s) - grace period expired", 
+										route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+								}
+							} else {
+								// Route was never seen before - treat as if it was just seen to give it grace period
+								gracePeriodStr := formatDuration(state.UbiquityConfig.RouteGracePeriod)
+								logInfo("Route marked for deletion: %s -> %s (%s) - will be removed in %s (grace period)", 
+									route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name, gracePeriodStr)
+							}
+						}
 					}
 				} else {
 					logInfo("Configured routes: 0 Thread routes in Ubiquity router")
