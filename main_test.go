@@ -901,25 +901,25 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 	gracePeriod := 10 * time.Minute
 
 	tests := []struct {
-		name         string
-		current      []UbiquityStaticRoute
-		desired      []UbiquityStaticRoute
-		routeLastSeen map[string]time.Time
-		gracePeriod  time.Duration
-		expectedAdd  int
+		name           string
+		current        []UbiquityStaticRoute
+		desired        []UbiquityStaticRoute
+		routeLastSeen  map[string]time.Time
+		gracePeriod    time.Duration
+		expectedAdd    int
 		expectedRemove int
 	}{
 		{
-			name:    "No routes to add or remove",
-			current: []UbiquityStaticRoute{},
-			desired: []UbiquityStaticRoute{},
-			routeLastSeen: map[string]time.Time{},
-			gracePeriod:   gracePeriod,
-			expectedAdd:   0,
+			name:           "No routes to add or remove",
+			current:        []UbiquityStaticRoute{},
+			desired:        []UbiquityStaticRoute{},
+			routeLastSeen:  map[string]time.Time{},
+			gracePeriod:    gracePeriod,
+			expectedAdd:    0,
 			expectedRemove: 0,
 		},
 		{
-			name: "Add new route",
+			name:    "Add new route",
 			current: []UbiquityStaticRoute{},
 			desired: []UbiquityStaticRoute{
 				{
@@ -928,9 +928,9 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 					Name:               "Thread route via Router1",
 				},
 			},
-			routeLastSeen: map[string]time.Time{},
-			gracePeriod:   gracePeriod,
-			expectedAdd:   1,
+			routeLastSeen:  map[string]time.Time{},
+			gracePeriod:    gracePeriod,
+			expectedAdd:    1,
 			expectedRemove: 0,
 		},
 		{
@@ -943,10 +943,10 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 					Name:               "Thread route via Router1",
 				},
 			},
-			desired: []UbiquityStaticRoute{},
-			routeLastSeen: map[string]time.Time{},
-			gracePeriod:   gracePeriod,
-			expectedAdd:   0,
+			desired:        []UbiquityStaticRoute{},
+			routeLastSeen:  map[string]time.Time{},
+			gracePeriod:    gracePeriod,
+			expectedAdd:    0,
 			expectedRemove: 0, // Gets grace period when never seen before
 		},
 		{
@@ -963,8 +963,8 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 			routeLastSeen: map[string]time.Time{
 				"fd00:1111:2222:3333::/64->2001:4860:4860:1234::ff": now.Add(-5 * time.Minute), // 5 minutes ago
 			},
-			gracePeriod:   gracePeriod,
-			expectedAdd:   0,
+			gracePeriod:    gracePeriod,
+			expectedAdd:    0,
 			expectedRemove: 0, // Should not be removed yet
 		},
 		{
@@ -981,8 +981,8 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 			routeLastSeen: map[string]time.Time{
 				"fd00:1111:2222:3333::/64->2001:4860:4860:1234::ff": now.Add(-15 * time.Minute), // 15 minutes ago
 			},
-			gracePeriod:   gracePeriod,
-			expectedAdd:   0,
+			gracePeriod:    gracePeriod,
+			expectedAdd:    0,
 			expectedRemove: 1, // Should be removed
 		},
 		{
@@ -1016,8 +1016,8 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 			routeLastSeen: map[string]time.Time{
 				"fd00:2222:3333:4444::/64->2001:4860:4860:1234::fe": now.Add(-15 * time.Minute), // Old, should be removed
 			},
-			gracePeriod:   gracePeriod,
-			expectedAdd:   1, // New route
+			gracePeriod:    gracePeriod,
+			expectedAdd:    1, // New route
 			expectedRemove: 1, // Old route beyond grace period
 		},
 	}
@@ -1025,11 +1025,11 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			toAdd, toRemove := compareRoutesWithGracePeriod(tt.current, tt.desired, tt.routeLastSeen, tt.gracePeriod)
-			
+
 			if len(toAdd) != tt.expectedAdd {
 				t.Errorf("Expected %d routes to add, got %d", tt.expectedAdd, len(toAdd))
 			}
-			
+
 			if len(toRemove) != tt.expectedRemove {
 				t.Errorf("Expected %d routes to remove, got %d", tt.expectedRemove, len(toRemove))
 			}
@@ -1063,22 +1063,22 @@ func TestCreateHTTPClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := createHTTPClient(tt.config)
-			
+
 			// Check that client is not nil
 			if client == nil {
 				t.Fatal("Expected HTTP client to be created, got nil")
 			}
-			
+
 			// Check timeout is set
 			if client.Timeout != 30*time.Second {
 				t.Errorf("Expected timeout to be 30s, got %v", client.Timeout)
 			}
-			
+
 			// Check transport is configured
 			if client.Transport == nil {
 				t.Fatal("Expected transport to be configured, got nil")
 			}
-			
+
 			// For more detailed testing, we would need to access the transport's TLS config
 			// This is a basic smoke test to ensure the function works
 		})
@@ -1202,7 +1202,7 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 			{
 				Name:     "Router1",
 				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"), // Valid public IPv6
-				CIDR:     "fe80::/64", // Link-local CIDR (this is just metadata)
+				CIDR:     "fe80::/64",                            // Link-local CIDR (this is just metadata)
 			},
 		}
 
@@ -1223,20 +1223,20 @@ func TestGetUbiquityConfigEdgeCases(t *testing.T) {
 		"UBIQUITY_INSECURE_SSL":    os.Getenv("UBIQUITY_INSECURE_SSL"),
 		"ROUTE_GRACE_PERIOD":       os.Getenv("ROUTE_GRACE_PERIOD"),
 	}
-	
+
 	// Restore environment after test
 	defer func() {
 		for key, value := range originalEnv {
 			if value == "" {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			} else {
-				os.Setenv(key, value)
+				_ = os.Setenv(key, value)
 			}
 		}
 	}()
 
 	t.Run("Invalid grace period should use default", func(t *testing.T) {
-		os.Setenv("ROUTE_GRACE_PERIOD", "invalid-duration")
+		_ = os.Setenv("ROUTE_GRACE_PERIOD", "invalid-duration")
 		config := getUbiquityConfig()
 		expected := 10 * time.Minute // Default grace period
 		if config.RouteGracePeriod != expected {
@@ -1245,7 +1245,7 @@ func TestGetUbiquityConfigEdgeCases(t *testing.T) {
 	})
 
 	t.Run("Empty grace period should use default", func(t *testing.T) {
-		os.Setenv("ROUTE_GRACE_PERIOD", "")
+		_ = os.Setenv("ROUTE_GRACE_PERIOD", "")
 		config := getUbiquityConfig()
 		expected := 10 * time.Minute // Default grace period
 		if config.RouteGracePeriod != expected {
@@ -1254,7 +1254,7 @@ func TestGetUbiquityConfigEdgeCases(t *testing.T) {
 	})
 
 	t.Run("Valid grace period should be parsed", func(t *testing.T) {
-		os.Setenv("ROUTE_GRACE_PERIOD", "5m")
+		_ = os.Setenv("ROUTE_GRACE_PERIOD", "5m")
 		config := getUbiquityConfig()
 		expected := 5 * time.Minute
 		if config.RouteGracePeriod != expected {
@@ -1263,7 +1263,7 @@ func TestGetUbiquityConfigEdgeCases(t *testing.T) {
 	})
 
 	t.Run("Insecure SSL should be parsed correctly", func(t *testing.T) {
-		os.Setenv("UBIQUITY_INSECURE_SSL", "true")
+		_ = os.Setenv("UBIQUITY_INSECURE_SSL", "true")
 		config := getUbiquityConfig()
 		if !config.InsecureSSL {
 			t.Errorf("Expected InsecureSSL to be true, got false")
@@ -1271,7 +1271,7 @@ func TestGetUbiquityConfigEdgeCases(t *testing.T) {
 	})
 
 	t.Run("Secure SSL should be parsed correctly", func(t *testing.T) {
-		os.Setenv("UBIQUITY_INSECURE_SSL", "false")
+		_ = os.Setenv("UBIQUITY_INSECURE_SSL", "false")
 		config := getUbiquityConfig()
 		if config.InsecureSSL {
 			t.Errorf("Expected InsecureSSL to be false, got true")
