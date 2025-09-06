@@ -912,7 +912,6 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 
 	// Get current routes from router
 	currentRoutes, err := getUbiquityStaticRoutes(state.UbiquityConfig)
-	fmt.Printf("🔍 getUbiquityStaticRoutes returned %d routes, error: %v\n", len(currentRoutes), err)
 	if err != nil {
 		fmt.Printf("❌ Failed to get current routes: %v\n", err)
 		// If we get a rate limit error, don't try to re-login immediately
@@ -950,13 +949,6 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		state.RouteLastSeen[key] = routeUpdateTime
 	}
 
-	// Debug: Show current routes from API (only if there are routes to remove)
-	if len(currentRoutes) > 0 {
-		logDebug("Current routes from API (%d total)", len(currentRoutes))
-		for _, route := range currentRoutes {
-			logDebug("  - %s -> %s (ID: %s, Name: %s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID, route.Name)
-		}
-	}
 
 	// Find routes to add and remove (with grace period consideration)
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
@@ -1197,11 +1189,9 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("🔍 DELETE response: %d - %s\n", resp.StatusCode, string(body))
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Printf("🔍 DELETE response: %d - Success\n", resp.StatusCode)
 	return nil
 }
 
@@ -1250,14 +1240,6 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 	var toRemove []UbiquityStaticRoute
 	currentTime := time.Now()
 
-	// Debug: Show what we're comparing (only in debug mode)
-	logDebug("Comparing routes - Current: %d, Desired: %d", len(current), len(desired))
-	for _, route := range current {
-		logDebug("  Current: %s -> %s (ID: %s, Name: %s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID, route.Name)
-	}
-	for _, route := range desired {
-		logDebug("  Desired: %s -> %s (Name: %s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
-	}
 
 	// Create a map of desired routes for quick lookup
 	desiredMap := make(map[string]UbiquityStaticRoute)
@@ -1291,8 +1273,6 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 					routeLastSeen[key] = currentTime
 					continue
 				}
-				logDebug("🗑️ Marking route for removal: %s -> %s (ID: %s)",
-					currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, currentRoute.ID)
 				toRemove = append(toRemove, currentRoute)
 			}
 		}
