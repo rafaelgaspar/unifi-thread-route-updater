@@ -106,23 +106,23 @@ type DaemonState struct {
 	Routes              []Route
 	LastUpdate          time.Time
 	UbiquityConfig      UbiquityConfig
-	AddedRoutes         map[string]bool // Track routes we've added to prevent duplicates
+	AddedRoutes         map[string]bool      // Track routes we've added to prevent duplicates
 	RouteLastSeen       map[string]time.Time // Track when each route was last seen
 }
 
 // UbiquityConfig holds configuration for Ubiquity router API
 type UbiquityConfig struct {
-	RouterHostname     string
-	Username           string
-	Password           string
-	APIBaseURL         string
-	InsecureSSL        bool
-	Enabled            bool
-	SessionToken       string // Device token for API requests
-	CSRFToken          string // CSRF token for API requests
-	SessionCookie      string // Session cookie for API requests
-	LastLoginTime      int64  // Timestamp of last successful login
-	RouteGracePeriod   time.Duration // Grace period before removing routes
+	RouterHostname   string
+	Username         string
+	Password         string
+	APIBaseURL       string
+	InsecureSSL      bool
+	Enabled          bool
+	SessionToken     string        // Device token for API requests
+	CSRFToken        string        // CSRF token for API requests
+	SessionCookie    string        // Session cookie for API requests
+	LastLoginTime    int64         // Timestamp of last successful login
+	RouteGracePeriod time.Duration // Grace period before removing routes
 }
 
 // UbiquityStaticRoute represents a static route in Ubiquity format
@@ -1082,9 +1082,9 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	client := createHTTPClient(config)
 
-	// Try the legacy endpoint first (might support IPv6 better)
-	url := fmt.Sprintf("%s/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
-	fmt.Printf("🔍 Trying legacy endpoint: %s\n", url)
+	// Try the UDM Pro endpoint first (same as the working read endpoint)
+	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
+	fmt.Printf("🔍 Trying UDM Pro endpoint: %s\n", url)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
@@ -1199,6 +1199,13 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 							gracePeriod-timeSinceLastSeen)
 						continue
 					}
+				} else {
+					// Route was never seen before - treat as if it was just seen to give it grace period
+					fmt.Printf("⏳ Route %s -> %s never seen before, giving grace period (%v), not removing\n", 
+						currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, gracePeriod)
+					// Mark it as seen now so it gets the full grace period
+					routeLastSeen[key] = currentTime
+					continue
 				}
 				toRemove = append(toRemove, currentRoute)
 			}
