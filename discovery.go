@@ -201,12 +201,21 @@ func calculateCIDR64(ip net.IP) string {
 	return ""
 }
 
-// extractRouterName extracts the simple router name from its FQDN
+// extractRouterName extracts the simple router name from its FQDN and unescapes it
 func extractRouterName(fqdn string) string {
+	// Extract the name part before the first dot
+	name := fqdn
 	if idx := strings.Index(fqdn, "."); idx != -1 {
-		return fqdn[:idx]
+		name = fqdn[:idx]
 	}
-	return fqdn
+	
+	// Unescape common mDNS escape sequences
+	name = strings.ReplaceAll(name, "\\ ", " ")  // Unescape spaces
+	name = strings.ReplaceAll(name, "\\(", "(")  // Unescape opening parentheses
+	name = strings.ReplaceAll(name, "\\)", ")")  // Unescape closing parentheses
+	name = strings.ReplaceAll(name, "\\", "")    // Remove any remaining backslashes
+	
+	return name
 }
 
 // formatDuration formats a duration to a human-readable string (e.g., "1h30m", "45m", "30s")

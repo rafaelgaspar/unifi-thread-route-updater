@@ -30,6 +30,11 @@ func TestExtractRouterName(t *testing.T) {
 			expected: "Thread_Border_Router",
 		},
 		{
+			name:     "Name with escaped spaces and parentheses",
+			fqdn:     "Living\\ Room\\ Apple\\ TV\\ \\(4\\)._meshcop._udp.local.",
+			expected: "Living Room Apple TV (4)",
+		},
+		{
 			name:     "Empty string",
 			fqdn:     "",
 			expected: "",
