@@ -888,10 +888,23 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	// Find routes to add and remove (with grace period consideration)
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
 	
-	// Only show summary if there are changes
-	if len(routesToAdd) > 0 || len(routesToRemove) > 0 {
+	// Show summary if there are changes or if we have routes being tracked
+	if len(routesToAdd) > 0 || len(routesToRemove) > 0 || len(state.RouteLastSeen) > 0 {
 		fmt.Printf("🔄 Route changes: +%d routes, -%d routes (grace period: %s)\n", 
 			len(routesToAdd), len(routesToRemove), formatDuration(state.UbiquityConfig.RouteGracePeriod))
+		
+		// Show grace period status for tracked routes
+		if len(state.RouteLastSeen) > 0 {
+			currentTime := time.Now()
+			for key, lastSeen := range state.RouteLastSeen {
+				timeSinceLastSeen := currentTime.Sub(lastSeen)
+				if timeSinceLastSeen < state.UbiquityConfig.RouteGracePeriod {
+					remaining := state.UbiquityConfig.RouteGracePeriod - timeSinceLastSeen
+					remainingStr := formatDuration(remaining)
+					fmt.Printf("⏳ Route %s still within grace period (%s remaining)\n", key, remainingStr)
+				}
+			}
+		}
 	}
 
 	// Filter out routes we've already added (in-memory tracking)
@@ -962,7 +975,7 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 		if config.CSRFToken != "" {
 			req.Header.Set("X-CSRF-Token", config.CSRFToken)
 		}
-		
+
 		if config.SessionCookie != "" {
 			req.AddCookie(&http.Cookie{
 				Name:  "TOKEN",
@@ -977,7 +990,7 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		
+
 		if err != nil {
 			continue
 		}
@@ -1284,7 +1297,6 @@ func loginToUbiquity(config *UbiquityConfig) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("login failed with status %d: %s", resp.StatusCode, string(body))
 	}
-
 
 	// Try to parse as the expected format first
 	var loginResp UbiquityLoginResponse
