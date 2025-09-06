@@ -190,7 +190,9 @@ func TestInitLogLevel(t *testing.T) {
 			originalLevel := currentLogLevel
 
 			// Set test value
-			os.Setenv("LOG_LEVEL", tt.envValue)
+			if err := os.Setenv("LOG_LEVEL", tt.envValue); err != nil {
+				t.Fatalf("Failed to set LOG_LEVEL: %v", err)
+			}
 
 			// Reset to default before testing
 			currentLogLevel = INFO
@@ -205,7 +207,9 @@ func TestInitLogLevel(t *testing.T) {
 			}
 
 			// Restore original values
-			os.Setenv("LOG_LEVEL", originalValue)
+			if err := os.Setenv("LOG_LEVEL", originalValue); err != nil {
+				t.Errorf("Failed to restore LOG_LEVEL: %v", err)
+			}
 			currentLogLevel = originalLevel
 		})
 	}
@@ -600,9 +604,13 @@ func TestGetUbiquityConfig(t *testing.T) {
 	defer func() {
 		for key, value := range originalVars {
 			if value == "" {
-				os.Unsetenv(key)
+				if err := os.Unsetenv(key); err != nil {
+					t.Errorf("Failed to unset %s: %v", key, err)
+				}
 			} else {
-				os.Setenv(key, value)
+				if err := os.Setenv(key, value); err != nil {
+					t.Errorf("Failed to set %s: %v", key, err)
+				}
 			}
 		}
 	}()
@@ -610,7 +618,9 @@ func TestGetUbiquityConfig(t *testing.T) {
 	t.Run("Default configuration", func(t *testing.T) {
 		// Clear all environment variables
 		for key := range originalVars {
-			os.Unsetenv(key)
+			if err := os.Unsetenv(key); err != nil {
+				t.Errorf("Failed to unset %s: %v", key, err)
+			}
 		}
 
 		config := getUbiquityConfig()

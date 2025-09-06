@@ -943,7 +943,11 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+		}
+	}()
 
 	// Read the response body for debugging
 	body, err := io.ReadAll(resp.Body)
@@ -1029,7 +1033,11 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1079,7 +1087,11 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1197,7 +1209,11 @@ func loginToUbiquity(config *UbiquityConfig) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+		}
+	}()
 
 	// Read the response body first to debug
 	body, err := io.ReadAll(resp.Body)
