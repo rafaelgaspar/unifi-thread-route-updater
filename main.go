@@ -552,9 +552,65 @@ func isRoutableCIDR(cidr string) bool {
 		return false
 	}
 
-	// fdc0::/7 - Unique Local Addresses (ULA) - should not be routed globally
-	if len(ip) >= 1 && (ip[0]&0xfe) == 0xfc {
+	// Note: fdc0::/7 (Unique Local Addresses) are valid for Thread Networks
+	// but Thread Border Routers should use public IPv6 addresses
+
+	return true
+}
+
+// isRoutableRouterAddress checks if a Thread Border Router IPv6 address is routable
+// Thread Border Routers should only use public IPv6 addresses, not link-local or ULA
+func isRoutableRouterAddress(ip net.IP) bool {
+	if ip == nil {
 		return false
+	}
+
+	// For IPv4 addresses, return false (we only want IPv6)
+	if ip.To4() != nil {
+		return false
+	}
+
+	// For IPv6 addresses, check for non-routable ranges
+	if ip.To16() != nil {
+		// fe80::/10 - Link-local addresses
+		if ip[0] == 0xfe && (ip[1]&0xc0) == 0x80 {
+			return false
+		}
+
+		// ::1/128 - Loopback address
+		if ip.Equal(net.ParseIP("::1")) {
+			return false
+		}
+
+		// ::/128 - Unspecified address
+		if ip.Equal(net.ParseIP("::")) {
+			return false
+		}
+
+		// ff00::/8 - Multicast addresses
+		if ip[0] == 0xff {
+			return false
+		}
+
+		// fdc0::/7 - Unique Local Addresses (ULA) - Thread Border Routers should use public addresses
+		if len(ip) >= 1 && (ip[0]&0xfe) == 0xfc {
+			return false
+		}
+
+		// 2001:db8::/32 - Documentation prefix
+		if len(ip) >= 4 && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
+			return false
+		}
+
+		// 2001::/32 - Teredo tunneling
+		if len(ip) >= 4 && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x00 && ip[3] == 0x00 {
+			return false
+		}
+
+		// 2002::/16 - 6to4 tunneling
+		if len(ip) >= 2 && ip[0] == 0x20 && ip[1] == 0x02 {
+			return false
+		}
 	}
 
 	return true
@@ -589,10 +645,10 @@ func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route 
 			continue
 		}
 
-		// Create routes to all available Thread Border Routers (only routable ones)
+		// Create routes to all available Thread Border Routers (only public IPv6 addresses)
 		for _, router := range routers {
-			// Only use routers with routable IPv6 addresses
-			if isRoutableCIDR(router.IPv6Addr.String() + "/128") {
+			// Only use routers with public IPv6 addresses (not link-local or ULA)
+			if isRoutableRouterAddress(router.IPv6Addr) {
 				routeKey := fmt.Sprintf("%s->%s", deviceCIDR, router.IPv6Addr.String())
 				route := Route{
 					CIDR:             deviceCIDR,
