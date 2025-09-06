@@ -1154,50 +1154,61 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	client := createHTTPClient(config)
 
-	// Try the legacy endpoint first (might support IPv6 better)
-	url := fmt.Sprintf("%s/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
-	req, err := http.NewRequest("DELETE", url, nil)
-	if err != nil {
-		return err
+	// Try both endpoints - legacy first, then UDM Pro
+	endpoints := []string{
+		fmt.Sprintf("%s/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID),
+		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID),
 	}
 
-	// Add session authentication
-	req.Header.Set("Content-Type", "application/json")
-
-	// Use session cookie as Authorization header
-	if config.SessionCookie != "" {
-		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-	}
-
-	if config.CSRFToken != "" {
-		// Use CSRF token in X-CSRF-Token header
-		req.Header.Set("X-CSRF-Token", config.CSRFToken)
-	}
-	if config.SessionCookie != "" {
-		req.AddCookie(&http.Cookie{
-			Name:  "TOKEN",
-			Value: config.SessionCookie,
-		})
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+	var lastErr error
+	for i, url := range endpoints {
+		req, err := http.NewRequest("DELETE", url, nil)
+		if err != nil {
+			lastErr = err
+			continue
 		}
-	}()
 
-	if resp.StatusCode != http.StatusOK {
+		// Add session authentication
+		req.Header.Set("Content-Type", "application/json")
+
+		// Use session cookie as Authorization header
+		if config.SessionCookie != "" {
+			req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
+		}
+
+		if config.CSRFToken != "" {
+			// Use CSRF token in X-CSRF-Token header
+			req.Header.Set("X-CSRF-Token", config.CSRFToken)
+		}
+		if config.SessionCookie != "" {
+			req.AddCookie(&http.Cookie{
+				Name:  "TOKEN",
+				Value: config.SessionCookie,
+			})
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		// Check response status
+		if resp.StatusCode == http.StatusOK {
+			fmt.Printf("🔍 DELETE response: %d - Success (endpoint %d)\n", resp.StatusCode, i+1)
+			resp.Body.Close()
+			return nil
+		}
+
+		// Log the error and try next endpoint
 		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("🔍 DELETE response: %d - %s\n", resp.StatusCode, string(body))
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		fmt.Printf("🔍 DELETE response: %d - %s (endpoint %d)\n", resp.StatusCode, string(body), i+1)
+		resp.Body.Close()
+		lastErr = fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Printf("🔍 DELETE response: %d - Success\n", resp.StatusCode)
-	return nil
+	// If we get here, all endpoints failed
+	return fmt.Errorf("all deletion endpoints failed, last error: %v", lastErr)
 }
 
 // createHTTPClient creates an HTTP client with appropriate settings
