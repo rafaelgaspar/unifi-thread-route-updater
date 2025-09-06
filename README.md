@@ -116,7 +116,7 @@ The application can be deployed in Kubernetes clusters using Helm charts.
 - **Security hardened** (non-root containers, read-only filesystem)
 - **Health checks** and readiness probes
 - **Configurable resource limits**
-- **Secret management** for sensitive data
+- **Secret management** for sensitive data (create new or use existing secrets)
 - **Service account** with minimal permissions
 
 #### Advanced Configuration
@@ -153,6 +153,17 @@ secrets:
 serviceMonitor:
   enabled: true
   interval: 30s
+```
+
+#### Using Existing Secrets
+
+For advanced secret management (e.g., External Secrets Operator, Sealed Secrets), you can use an existing secret instead of creating a new one:
+
+```yaml
+# values.yaml
+secrets:
+  create: false
+  secretName: "my-existing-secret"
 ```
 
 ### CI/CD Pipeline

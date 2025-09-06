@@ -1,0 +1,21 @@
+apiVersion: v2
+name: thread-route-updater
+description: A Helm chart for Thread Route Updater - automatically manages Thread network static routes on Ubiquiti routers
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/rafaelgaspar/ubiquity-thread-route-updater
+sources:
+  - https://github.com/rafaelgaspar/ubiquity-thread-route-updater
+maintainers:
+  - name: Rafael Gaspar
+    email: rafael@rafaelgaspar.xyz
+keywords:
+  - thread
+  - matter
+  - ubiquiti
+  - networking
+  - iot
+  - home-automation
+annotations:
+  category: Networking

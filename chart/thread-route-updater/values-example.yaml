@@ -1,0 +1,48 @@
+# Example values file for thread-route-updater
+# Copy this file and customize for your environment
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/rafaelgaspar/thread-route-updater
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Configuration for the application
+config:
+  # Logging level (DEBUG, INFO, WARN, ERROR)
+  logLevel: "INFO"
+
+  # Ubiquiti router configuration
+  ubiquiti:
+    enabled: true
+    hostname: "unifi.local.rafaelgaspar.xyz"  # Change to your router hostname
+    username: "thread-route-updater"           # Change to your username
+    insecureSSL: false                         # Set to true for self-signed certificates
+
+# Secrets for sensitive configuration
+secrets:
+  # Create a new secret (default behavior)
+  create: true
+  
+  # Ubiquiti router password - CHANGE THIS!
+  ubiquitiPassword: "your-secure-password-here"
+  
+  # Secret name (optional - defaults to {release-name}-thread-route-updater-secrets)
+  # When create: false, this should be the name of an existing secret
+  secretName: ""
+
+# Resource limits
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Enable monitoring (requires Prometheus operator)
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s

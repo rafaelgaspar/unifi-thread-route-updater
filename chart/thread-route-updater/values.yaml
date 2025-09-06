@@ -1,0 +1,108 @@
+# Default values for thread-route-updater
+# This is a YAML-formatted file.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/rafaelgaspar/thread-route-updater
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1001
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: thread-route-updater.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Configuration for the application
+config:
+  # Logging level (DEBUG, INFO, WARN, ERROR)
+  logLevel: "INFO"
+  
+  # Ubiquiti router configuration
+  ubiquiti:
+    enabled: true
+    hostname: "unifi.local.rafaelgaspar.xyz"
+    username: "thread-route-updater"
+    insecureSSL: false
+
+# Secrets for sensitive configuration
+secrets:
+  # Create a new secret (default behavior)
+  create: true
+  
+  # Ubiquiti router password
+  ubiquitiPassword: ""
+  
+  # Secret name (used for both created and existing secrets)
+  secretName: ""
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Network policy
+networkPolicy:
+  enabled: false
+
+# Service monitor for Prometheus
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
