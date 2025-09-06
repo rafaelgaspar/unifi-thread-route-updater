@@ -648,11 +648,21 @@ func TestGetUbiquityConfig(t *testing.T) {
 
 	t.Run("Configuration with environment variables", func(t *testing.T) {
 		// Set test environment variables
-		os.Setenv("UBIQUITY_ROUTER_HOSTNAME", "test-router.local")
-		os.Setenv("UBIQUITY_USERNAME", "testuser")
-		os.Setenv("UBIQUITY_PASSWORD", "testpass")
-		os.Setenv("UBIQUITY_INSECURE_SSL", "true")
-		os.Setenv("UBIQUITY_ENABLED", "true")
+		if err := os.Setenv("UBIQUITY_ROUTER_HOSTNAME", "test-router.local"); err != nil {
+			t.Fatalf("Failed to set UBIQUITY_ROUTER_HOSTNAME: %v", err)
+		}
+		if err := os.Setenv("UBIQUITY_USERNAME", "testuser"); err != nil {
+			t.Fatalf("Failed to set UBIQUITY_USERNAME: %v", err)
+		}
+		if err := os.Setenv("UBIQUITY_PASSWORD", "testpass"); err != nil {
+			t.Fatalf("Failed to set UBIQUITY_PASSWORD: %v", err)
+		}
+		if err := os.Setenv("UBIQUITY_INSECURE_SSL", "true"); err != nil {
+			t.Fatalf("Failed to set UBIQUITY_INSECURE_SSL: %v", err)
+		}
+		if err := os.Setenv("UBIQUITY_ENABLED", "true"); err != nil {
+			t.Fatalf("Failed to set UBIQUITY_ENABLED: %v", err)
+		}
 
 		config := getUbiquityConfig()
 
