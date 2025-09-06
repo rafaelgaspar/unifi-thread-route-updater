@@ -989,8 +989,19 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 
 	// Remove old routes
 	for _, route := range routesToRemove {
+		fmt.Printf("🗑️  Attempting to delete route: %s -> %s (ID: %s)\n", 
+			route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
 		if err := deleteUbiquityStaticRoute(state.UbiquityConfig, route.ID); err != nil {
-			fmt.Printf("❌ Failed to delete route %s: %v\n", route.StaticRouteNetwork, err)
+			fmt.Printf("❌ Failed to delete route %s (ID: %s): %v\n", route.StaticRouteNetwork, route.ID, err)
+			// If the route ID is invalid, it might have been manually deleted
+			// Remove it from our tracking to prevent repeated attempts
+			if strings.Contains(err.Error(), "IdInvalid") {
+				fmt.Printf("⚠️  Route ID invalid, likely already deleted. Removing from tracking.\n")
+				// Remove from in-memory tracking
+				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+				delete(state.RouteLastSeen, key)
+				delete(state.AddedRoutes, key)
+			}
 		} else {
 			fmt.Printf("✅ Deleted route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		}
@@ -1136,6 +1147,9 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 
 	// Try the UDM Pro endpoint first (same as the working read endpoint)
 	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
+	
+	// Debug: Log the delete attempt
+	fmt.Printf("🔍 DELETE request to: %s\n", url)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
@@ -1172,9 +1186,11 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("🔍 DELETE response: %d - %s\n", resp.StatusCode, string(body))
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
+	fmt.Printf("🔍 DELETE response: %d - Success\n", resp.StatusCode)
 	return nil
 }
 
