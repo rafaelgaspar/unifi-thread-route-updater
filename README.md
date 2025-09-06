@@ -19,11 +19,13 @@ A Go daemon that continuously monitors your network for Matter devices and Threa
 - **🔄 Continuous Monitoring**: Runs as a daemon, continuously discovering devices and routers
 - **📡 mDNS Discovery**: Automatically discovers Matter devices and Thread Border Routers on your network
 - **🌐 IPv6 Support**: Focuses on IPv6 addresses for Thread networking
-- **📊 Live Dashboard**: Real-time display of discovered devices and current routes
+- **📊 Structured Logging**: Configurable log levels (DEBUG, INFO, WARN, ERROR) with proper daemon output
 - **🔧 CIDR Calculation**: Automatically calculates /64 CIDR blocks for discovered networks
 - **🛣️ Route Generation**: Generates routing entries for Thread networks that need routing
 - **🎯 Smart Filtering**: Excludes main network CIDRs where Thread Border Routers are already located
 - **🔗 Ubiquity Integration**: Automatically updates static routes on Ubiquity routers via API
+- **⏰ Grace Period Management**: Configurable grace period for route removal with detailed status reporting
+- **🔍 Route Lifecycle Tracking**: Shows both detected and configured routes with deletion status
 
 ## 🚀 Quick Start
 
@@ -104,6 +106,22 @@ go build -o thread-route-updater .
 | `UBIQUITY_ROUTER_ENABLED` | Enable Ubiquiti integration | `true` |
 | `UBIQUITY_ROUTER_INSECURE_SSL` | Skip SSL verification | `false` |
 | `ROUTE_GRACE_PERIOD` | Grace period before removing routes (e.g., `10m`, `30m`, `1h`) | `10m` |
+
+### Log Level Configuration
+
+The `LOG_LEVEL` environment variable controls the verbosity of the daemon output:
+
+- **DEBUG**: Shows all discovery details, device lists, route information, and grace period status
+- **INFO**: Shows status updates, route changes, and important notifications (recommended for production)
+- **WARN**: Shows only warnings and errors
+- **ERROR**: Shows only critical errors
+
+Example usage:
+```bash
+LOG_LEVEL=DEBUG ./thread-route-updater  # Verbose output for debugging
+LOG_LEVEL=INFO ./thread-route-updater   # Normal operation (default)
+LOG_LEVEL=WARN ./thread-route-updater   # Quiet operation
+```
 
 ## 🏗️ Deployment
 
@@ -187,47 +205,38 @@ The project includes a complete CI/CD pipeline with:
 
 ## Usage
 
-This will start the daemon with a live dashboard showing:
+The daemon runs continuously in the background, providing structured logging output with configurable severity levels. It monitors your network for Matter devices and Thread Border Routers, automatically managing routes on your Ubiquity router.
 
-- Current Matter devices discovered
-- Thread Border Routers found
-- Real-time routing information
-- Last update timestamp
+### Log Output Example
+
+```
+2025/09/07 00:58:38 [INFO] Thread Route Updater daemon starting...
+2025/09/07 00:58:38 [INFO] Status update: 13 Matter devices, 3 Thread Border Routers, 2 routes detected
+2025/09/07 00:58:38 [INFO] Detected routes: 2 routes
+2025/09/07 00:58:38 [DEBUG] Detected route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:6c:3a9c:4754:7613 (Kitchen HomePod)
+2025/09/07 00:58:38 [DEBUG] Detected route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (Bathroom HomePod)
+2025/09/07 00:58:38 [INFO] Configured routes: 3 Thread routes in Ubiquity router
+2025/09/07 00:58:38 [DEBUG] Configured route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (Thread route via Bathroom HomePod)
+2025/09/07 00:58:38 [DEBUG] Configured route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:6c:3a9c:4754:7613 (Thread route via Kitchen HomePod)
+2025/09/07 00:58:38 [INFO] Route marked for deletion: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV) - will be removed in 7m
+```
 
 ## Daemon Features
 
-### Live Dashboard
+### Structured Logging
 
-The daemon provides a real-time dashboard that updates every 5 seconds, showing:
+The daemon provides structured logging with configurable severity levels:
 
-```
-🔍 Thread Route Updater Daemon - Live Status
-==================================================
-📅 Last Update: 19:55:30
-
-📱 Matter Devices: 19
-  • A0C30DA7DF03460A-000000000001B669._matter._tcp.local. -> 2a02:8109:aa22:4181:548a:5ff:fe83:c65e
-  • 284F0E33172DF8CA-117ED04504CCE000._matter._tcp.local. -> 2a02:8109:aa22:4181:1ac2:3cff:fe41:4a02
-  ... and 17 more
-
-🌐 Thread Border Routers: 3
-  • Bathroom\ HomePod -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (2a02:8109:aa22:4181::/64)
-  • Kitchen\ HomePod -> 2a02:8109:aa22:4181:6c:3a9c:4754:7613 (2a02:8109:aa22:4181::/64)
-  • Living\ Room\ Apple\ TV\ \(4\) -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (2a02:8109:aa22:4181::/64)
-
-🛣️  Current Routes:
-  fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (Bathroom\ HomePod)
-  fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:6c:3a9c:4754:7613 (Kitchen\ HomePod)
-  fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Living\ Room\ Apple\ TV\ \(4\))
-
-🔄 Monitoring... (Next update in 5s)
-```
+- **DEBUG**: Detailed discovery information, device lists, route details
+- **INFO**: Status updates, route changes, grace period notifications
+- **WARN**: Authentication issues, overdue route deletions, configuration problems
+- **ERROR**: Critical failures, network issues, API errors
 
 ### Continuous Monitoring
 
 - **Matter Devices**: Scanned every 30 seconds
 - **Thread Border Routers**: Scanned every 30 seconds
-- **Dashboard Updates**: Refreshed every 5 seconds
+- **Status Updates**: Reported every 30 seconds
 - **Automatic Recovery**: Handles network interruptions gracefully
 - **Route Grace Period**: Routes are not immediately removed when devices go offline, preventing temporary route churn
 
@@ -240,6 +249,25 @@ To prevent unnecessary route churn when mDNS announcements are infrequent, the a
 - **Benefits**: Prevents temporary route deletion when devices briefly go offline
 - **Configurable**: Set via `ROUTE_GRACE_PERIOD` environment variable (e.g., `30m`, `2h`, `1h30m`)
 
+#### Grace Period Status Messages
+
+The daemon provides detailed status information about routes in different states:
+
+**Routes within grace period:**
+```
+[INFO] Route marked for deletion: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV) - will be removed in 7m
+```
+
+**Routes overdue for deletion:**
+```
+[WARN] Route overdue for deletion: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV) - grace period expired
+```
+
+**Routes never seen before (gets full grace period):**
+```
+[INFO] Route marked for deletion: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV) - will be removed in 10m (grace period)
+```
+
 Example scenarios:
 
 - Device goes offline for 5 minutes → Route kept (within grace period)
@@ -248,19 +276,21 @@ Example scenarios:
 
 ## Output Format
 
-The daemon outputs routing information in the following format:
+The daemon outputs structured logging with different severity levels. Route information is displayed in the following format:
 
 ```
 IPV6_CIDR_BLOCK -> THREAD_BORDER_ROUTER_IPV6 (ROUTER_NAME)
 ```
 
-Example output:
+Example log output:
 
 ```
-fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (Bathroom\ HomePod)
-fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:6c:3a9c:4754:7613 (Kitchen\ HomePod)
-fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Living\ Room\ Apple\ TV\ \(4\))
+2025/09/07 00:58:38 [DEBUG] Detected route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:6c:3a9c:4754:7613 (Kitchen HomePod)
+2025/09/07 00:58:38 [DEBUG] Detected route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (Bathroom HomePod)
+2025/09/07 00:58:38 [DEBUG] Configured route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (Thread route via Bathroom HomePod)
 ```
+
+Note: Router names are automatically unescaped from mDNS format (e.g., `Living\ Room\ Apple\ TV\ \(4\)` becomes `Living Room Apple TV (4)`).
 
 ## How It Works
 
@@ -273,7 +303,8 @@ fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Living\ Room\ Ap
 5. **📊 CIDR Calculation**: Calculates /64 network prefixes from IPv6 addresses
 6. **🛣️ Route Generation**: Creates routes only for Thread networks that need routing (excludes main network)
 7. **🔗 Ubiquity Integration**: Automatically updates static routes on Ubiquity routers via REST API
-8. **📱 Live Updates**: Dashboard refreshes every 5 seconds with current information
+8. **📊 Structured Logging**: Provides detailed status updates every 30 seconds with configurable log levels
+9. **⏰ Grace Period Management**: Tracks route lifecycle and provides detailed deletion status
 
 ## Ubiquity Router Integration
 
@@ -299,13 +330,13 @@ Set these environment variables to enable Ubiquity integration:
 4. **Automatic Updates**: Adds new routes and removes old Thread routes
 5. **Smart Management**: Only manages routes created by the daemon (marked with "Thread route via")
 
-### Example Output
+### Example Log Output
 
 ```
-🔄 Updating Ubiquity router static routes...
-✅ Added route: fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (Thread route via Bathroom HomePod)
-✅ Added route: fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:6c:3a9c:4754:7613 (Thread route via Kitchen HomePod)
-✅ Added route: fd6d:56e7:a3c6::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV (4))
+2025/09/07 00:58:38 [INFO] Updating Ubiquity router static routes...
+2025/09/07 00:58:38 [INFO] Added route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:cb5:3e92:7a5c:16d6 (Thread route via Bathroom HomePod)
+2025/09/07 00:58:38 [INFO] Added route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:6c:3a9c:4754:7613 (Thread route via Kitchen HomePod)
+2025/09/07 00:58:38 [INFO] Removed route: fd04:29fc:597e:1::/64 -> 2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c (Thread route via Living Room Apple TV)
 ```
 
 ## Development Commands
@@ -325,11 +356,35 @@ Set these environment variables to enable Ubiquity integration:
 
 ## Troubleshooting
 
+### Common Issues
+
 - **No devices found**: Ensure your network has Matter devices and Thread Border Routers
 - **mDNS issues**: Check that mDNS is working on your network
 - **IPv6 issues**: Verify that your devices have IPv6 addresses
 - **Permission issues**: Ensure the daemon has network access permissions
 - **Build issues**: Make sure you have Go 1.21+ installed
+
+### Log Analysis
+
+Use different log levels to troubleshoot issues:
+
+```bash
+# Debug mode - shows all discovery details
+LOG_LEVEL=DEBUG ./thread-route-updater
+
+# Check for authentication issues
+LOG_LEVEL=WARN ./thread-route-updater
+
+# Monitor route lifecycle
+LOG_LEVEL=INFO ./thread-route-updater
+```
+
+### Common Log Messages
+
+- **`[WARN] Failed to get configured routes from Ubiquity router: API request failed with status 401`**: Authentication issue - check credentials
+- **`[INFO] Route marked for deletion: ... - will be removed in Xm`**: Normal grace period behavior
+- **`[WARN] Route overdue for deletion: ... - grace period expired`**: Route should be removed but may be stuck
+- **`[DEBUG] No valid session tokens for route status check`**: Normal when session expires, will re-authenticate
 
 ## 🤖 About This Project
 
