@@ -996,25 +996,23 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		time.Sleep(2 * time.Second)
 	}
 
-	// Skip route deletion due to Ubiquiti API limitations
-	// Both legacy and UDM Pro endpoints fail with different errors:
-	// - Legacy: 404 Not Found (routes don't exist in legacy API)
-	// - UDM Pro: 400 api.err.IdInvalid (route IDs are invalid for deletion)
-	// This appears to be a fundamental issue with the Ubiquiti API
-	if len(routesToRemove) > 0 {
-		fmt.Printf("⚠️  Skipping deletion of %d old routes due to Ubiquiti API limitations\n", len(routesToRemove))
-		fmt.Printf("   Both deletion endpoints are failing (404/400 errors)\n")
-		fmt.Printf("   Routes to remove: %d (manual cleanup may be required)\n", len(routesToRemove))
-		for _, route := range routesToRemove {
-			fmt.Printf("   - %s -> %s (ID: %s)\n", route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
-		}
-		fmt.Printf("   Note: Old routes can be manually deleted from the Ubiquiti web interface\n")
-		
-		// Remove from tracking to prevent repeated attempts
-		for _, route := range routesToRemove {
-			key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
-			delete(state.RouteLastSeen, key)
-			delete(state.AddedRoutes, key)
+	// Remove old routes
+	for _, route := range routesToRemove {
+		fmt.Printf("🗑️  Attempting to delete route: %s -> %s (ID: %s)\n",
+			route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
+		if err := deleteUbiquityStaticRoute(state.UbiquityConfig, route.ID); err != nil {
+			fmt.Printf("❌ Failed to delete route %s (ID: %s): %v\n", route.StaticRouteNetwork, route.ID, err)
+			// If the route ID is invalid, it might have been manually deleted
+			// Remove it from our tracking to prevent repeated attempts
+			if strings.Contains(err.Error(), "IdInvalid") {
+				fmt.Printf("⚠️  Route ID invalid, likely already deleted. Removing from tracking.\n")
+				// Remove from in-memory tracking
+				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+				delete(state.RouteLastSeen, key)
+				delete(state.AddedRoutes, key)
+			}
+		} else {
+			fmt.Printf("✅ Deleted route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		}
 	}
 
@@ -1156,61 +1154,55 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	client := createHTTPClient(config)
 
-	// Try both endpoints - legacy first, then UDM Pro
-	endpoints := []string{
-		fmt.Sprintf("%s/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID),
-		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID),
+	// Use the correct endpoint path from the working example
+	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/%s", config.APIBaseURL, routeID)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
 	}
 
-	var lastErr error
-	for i, url := range endpoints {
-		req, err := http.NewRequest("DELETE", url, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
+	// Add headers to match the working request
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Origin", config.APIBaseURL)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15")
+	req.Header.Set("Priority", "u=3, i")
 
-		// Add session authentication
-		req.Header.Set("Content-Type", "application/json")
+	// Add CSRF token header
+	if config.CSRFToken != "" {
+		req.Header.Set("X-CSRF-Token", config.CSRFToken)
+	}
 
-		// Use session cookie as Authorization header
-		if config.SessionCookie != "" {
-			req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-		}
+	// Add TOKEN cookie (JWT token)
+	if config.SessionCookie != "" {
+		req.AddCookie(&http.Cookie{
+			Name:  "TOKEN",
+			Value: config.SessionCookie,
+		})
+	}
 
-		if config.CSRFToken != "" {
-			// Use CSRF token in X-CSRF-Token header
-			req.Header.Set("X-CSRF-Token", config.CSRFToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
 		}
-		if config.SessionCookie != "" {
-			req.AddCookie(&http.Cookie{
-				Name:  "TOKEN",
-				Value: config.SessionCookie,
-			})
-		}
+	}()
 
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// Check response status
-		if resp.StatusCode == http.StatusOK {
-			fmt.Printf("🔍 DELETE response: %d - Success (endpoint %d)\n", resp.StatusCode, i+1)
-			resp.Body.Close()
-			return nil
-		}
-
-		// Log the error and try next endpoint
+	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("🔍 DELETE response: %d - %s (endpoint %d)\n", resp.StatusCode, string(body), i+1)
-		resp.Body.Close()
-		lastErr = fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		fmt.Printf("🔍 DELETE response: %d - %s\n", resp.StatusCode, string(body))
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// If we get here, all endpoints failed
-	return fmt.Errorf("all deletion endpoints failed, last error: %v", lastErr)
+	fmt.Printf("🔍 DELETE response: %d - Success\n", resp.StatusCode)
+	return nil
 }
 
 // createHTTPClient creates an HTTP client with appropriate settings
