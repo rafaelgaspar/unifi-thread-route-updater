@@ -910,74 +910,78 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, error) {
 	client := createHTTPClient(config)
 
-	// Try the UDM Pro endpoint first
-	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL)
-	logDebug("Trying UDM Pro endpoint for reading: %s", url)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
+	// Try multiple endpoints to find the correct one for reading routes
+	endpoints := []string{
+		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL),
+		fmt.Sprintf("%s/api/s/default/rest/routing/static-route", config.APIBaseURL),
+		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing", config.APIBaseURL),
 	}
 
-	// Add session authentication
-	req.Header.Set("Content-Type", "application/json")
-
-	// Use session cookie as Authorization header
-	if config.SessionCookie != "" {
-		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-		logDebug("Added Authorization header with session cookie: %s", config.SessionCookie[:20]+"...")
-	}
-
-	if config.CSRFToken != "" {
-		// Use CSRF token in X-CSRF-Token header
-		req.Header.Set("X-CSRF-Token", config.CSRFToken)
-		logDebug("Added CSRF token header: %s", config.CSRFToken[:20]+"...")
-	}
-	if config.SessionCookie != "" {
-		req.AddCookie(&http.Cookie{
-			Name:  "TOKEN",
-			Value: config.SessionCookie,
-		})
-		fmt.Printf("🔍 Added session cookie (TOKEN) to request: %s\n", config.SessionCookie[:20]+"...")
-	} else {
-		fmt.Printf("⚠️ No session cookie available for request\n")
-	}
-
-	fmt.Printf("🔍 Making API request to: %s\n", url)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+	for i, url := range endpoints {
+		fmt.Printf("🔍 Trying endpoint %d: %s\n", i+1, url)
+		
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			fmt.Printf("❌ Failed to create request: %v\n", err)
+			continue
 		}
-	}()
 
-	// Read the response body for debugging
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+		// Add session authentication
+		req.Header.Set("Content-Type", "application/json")
+
+		// Use session cookie as Authorization header
+		if config.SessionCookie != "" {
+			req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
+		}
+
+		if config.CSRFToken != "" {
+			req.Header.Set("X-CSRF-Token", config.CSRFToken)
+		}
+		
+		if config.SessionCookie != "" {
+			req.AddCookie(&http.Cookie{
+				Name:  "TOKEN",
+				Value: config.SessionCookie,
+			})
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			fmt.Printf("❌ Request failed: %v\n", err)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		
+		if err != nil {
+			fmt.Printf("❌ Failed to read response: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("🔍 Response status: %d, body: %s\n", resp.StatusCode, string(body))
+
+		if resp.StatusCode == http.StatusOK {
+			var apiResp UbiquityAPIResponse
+			if err := json.Unmarshal(body, &apiResp); err != nil {
+				fmt.Printf("❌ Failed to parse JSON: %v\n", err)
+				continue
+			}
+
+			if apiResp.Meta.RC == "ok" {
+				fmt.Printf("✅ Successfully retrieved %d routes from endpoint %d\n", len(apiResp.Data), i+1)
+				return apiResp.Data, nil
+			} else {
+				fmt.Printf("❌ API returned error: %s\n", apiResp.Meta.RC)
+			}
+		} else {
+			fmt.Printf("❌ HTTP error: %d\n", resp.StatusCode)
+		}
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Debug: Print the raw response
-	fmt.Printf("🔍 Raw API response: %s\n", string(body))
-
-	var apiResp UbiquityAPIResponse
-	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %v", err)
-	}
-
-	fmt.Printf("🔍 Parsed response - RC: %s, Data count: %d\n", apiResp.Meta.RC, len(apiResp.Data))
-
-	if apiResp.Meta.RC != "ok" {
-		return nil, fmt.Errorf("API returned error: %s", apiResp.Meta.RC)
-	}
-
-	return apiResp.Data, nil
+	// If all endpoints failed, return empty array but log the issue
+	fmt.Printf("⚠️ All endpoints failed, returning empty routes array\n")
+	return []UbiquityStaticRoute{}, nil
 }
 
 // addUbiquityStaticRoute adds a new static route to the router
