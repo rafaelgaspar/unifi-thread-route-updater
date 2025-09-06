@@ -194,7 +194,7 @@ func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 
 			if !found {
 				state.ThreadBorderRouters = append(state.ThreadBorderRouters, router)
-				logDebug("Discovered new Thread Border Router: %s (%s) - CIDR: %s", router.Name, router.IPv6Addr.String(), router.CIDR)
+				logDebug("Discovered new Thread Border Router: %s (%s)", router.Name, router.IPv6Addr.String())
 			}
 		}
 
