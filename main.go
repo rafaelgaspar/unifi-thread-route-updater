@@ -996,23 +996,25 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		time.Sleep(2 * time.Second)
 	}
 
-	// Remove old routes
-	for _, route := range routesToRemove {
-		fmt.Printf("🗑️  Attempting to delete route: %s -> %s (ID: %s)\n",
-			route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
-		if err := deleteUbiquityStaticRoute(state.UbiquityConfig, route.ID); err != nil {
-			fmt.Printf("❌ Failed to delete route %s (ID: %s): %v\n", route.StaticRouteNetwork, route.ID, err)
-			// If the route ID is invalid, it might have been manually deleted
-			// Remove it from our tracking to prevent repeated attempts
-			if strings.Contains(err.Error(), "IdInvalid") {
-				fmt.Printf("⚠️  Route ID invalid, likely already deleted. Removing from tracking.\n")
-				// Remove from in-memory tracking
-				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
-				delete(state.RouteLastSeen, key)
-				delete(state.AddedRoutes, key)
-			}
-		} else {
-			fmt.Printf("✅ Deleted route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
+	// Skip route deletion due to Ubiquiti API limitations
+	// Both legacy and UDM Pro endpoints fail with different errors:
+	// - Legacy: 404 Not Found (routes don't exist in legacy API)
+	// - UDM Pro: 400 api.err.IdInvalid (route IDs are invalid for deletion)
+	// This appears to be a fundamental issue with the Ubiquiti API
+	if len(routesToRemove) > 0 {
+		fmt.Printf("⚠️  Skipping deletion of %d old routes due to Ubiquiti API limitations\n", len(routesToRemove))
+		fmt.Printf("   Both deletion endpoints are failing (404/400 errors)\n")
+		fmt.Printf("   Routes to remove: %d (manual cleanup may be required)\n", len(routesToRemove))
+		for _, route := range routesToRemove {
+			fmt.Printf("   - %s -> %s (ID: %s)\n", route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
+		}
+		fmt.Printf("   Note: Old routes can be manually deleted from the Ubiquiti web interface\n")
+		
+		// Remove from tracking to prevent repeated attempts
+		for _, route := range routesToRemove {
+			key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+			delete(state.RouteLastSeen, key)
+			delete(state.AddedRoutes, key)
 		}
 	}
 
