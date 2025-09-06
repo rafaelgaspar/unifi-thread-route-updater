@@ -949,7 +949,6 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		state.RouteLastSeen[key] = routeUpdateTime
 	}
 
-
 	// Find routes to add and remove (with grace period consideration)
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
 
@@ -1153,16 +1152,9 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 		return err
 	}
 
-	// Add headers to match the working request
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	req.Header.Set("Sec-Fetch-Mode", "cors")
-	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Origin", config.APIBaseURL)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15")
-	req.Header.Set("Priority", "u=3, i")
+	// Add essential headers
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "thread-route-updater/1.0")
 
 	// Add CSRF token header
 	if config.CSRFToken != "" {
@@ -1239,7 +1231,6 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 	var toAdd []UbiquityStaticRoute
 	var toRemove []UbiquityStaticRoute
 	currentTime := time.Now()
-
 
 	// Create a map of desired routes for quick lookup
 	desiredMap := make(map[string]UbiquityStaticRoute)
