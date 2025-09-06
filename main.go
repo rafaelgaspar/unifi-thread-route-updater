@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +18,65 @@ import (
 
 	"github.com/grandcat/zeroconf"
 )
+
+// LogLevel represents the logging severity level
+type LogLevel int
+
+const (
+	DEBUG LogLevel = iota
+	INFO
+	WARN
+	ERROR
+)
+
+var (
+	currentLogLevel LogLevel = INFO
+)
+
+// initLogLevel initializes the logging level from environment variable
+func initLogLevel() {
+	levelStr := os.Getenv("LOG_LEVEL")
+	switch strings.ToUpper(levelStr) {
+	case "DEBUG":
+		currentLogLevel = DEBUG
+	case "INFO":
+		currentLogLevel = INFO
+	case "WARN", "WARNING":
+		currentLogLevel = WARN
+	case "ERROR":
+		currentLogLevel = ERROR
+	default:
+		currentLogLevel = INFO
+	}
+}
+
+// logDebug logs debug messages
+func logDebug(format string, args ...interface{}) {
+	if currentLogLevel <= DEBUG {
+		log.Printf("[DEBUG] "+format, args...)
+	}
+}
+
+// logInfo logs info messages
+func logInfo(format string, args ...interface{}) {
+	if currentLogLevel <= INFO {
+		log.Printf("[INFO] "+format, args...)
+	}
+}
+
+// logWarn logs warning messages
+func logWarn(format string, args ...interface{}) {
+	if currentLogLevel <= WARN {
+		log.Printf("[WARN] "+format, args...)
+	}
+}
+
+// logError logs error messages
+func logError(format string, args ...interface{}) {
+	if currentLogLevel <= ERROR {
+		log.Printf("[ERROR] "+format, args...)
+	}
+}
 
 // DeviceInfo represents a discovered Matter device
 type DeviceInfo struct {
@@ -102,10 +162,12 @@ type UbiquityLoginResponse struct {
 }
 
 func main() {
-	fmt.Println("🚀 Starting Thread Route Updater Daemon...")
-	fmt.Println("📡 Continuously monitoring for Matter devices and Thread Border Routers...")
-	fmt.Println("🔄 Press Ctrl+C to stop")
-	fmt.Println()
+	// Initialize logging level from environment
+	initLogLevel()
+
+	logInfo("Thread Route Updater Daemon starting...")
+	logInfo("Monitoring for Matter devices and Thread Border Routers")
+	logInfo("Press Ctrl+C to stop")
 
 	// Create initial state
 	state := &DaemonState{
@@ -750,7 +812,7 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 			return
 		}
 	} else {
-		fmt.Printf("🔍 Using existing session tokens (%d seconds old)...\n", timeSinceLastLogin)
+		logDebug("Using existing session tokens (%d seconds old)", timeSinceLastLogin)
 	}
 
 	// Get current routes from router
@@ -786,13 +848,13 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	desiredRoutes := convertToUbiquityRoutes(routes)
 
 	// Debug: Print current and desired routes
-	fmt.Printf("🔍 Current routes from API: %d\n", len(currentRoutes))
+	logDebug("Current routes from API: %d", len(currentRoutes))
 	for i, route := range currentRoutes {
-		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+		logDebug("  [%d] %s -> %s (%s)", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 	}
-	fmt.Printf("🔍 Desired routes: %d\n", len(desiredRoutes))
+	logDebug("Desired routes: %d", len(desiredRoutes))
 	for i, route := range desiredRoutes {
-		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+		logDebug("  [%d] %s -> %s (%s)", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 	}
 
 	// Find routes to add and remove
@@ -846,7 +908,7 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 
 	// Try the UDM Pro endpoint first
 	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL)
-	fmt.Printf("🔍 Trying UDM Pro endpoint for reading: %s\n", url)
+	logDebug("Trying UDM Pro endpoint for reading: %s", url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -858,13 +920,13 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 	// Use session cookie as Authorization header
 	if config.SessionCookie != "" {
 		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-		fmt.Printf("🔍 Added Authorization header with session cookie: %s\n", config.SessionCookie[:20]+"...")
+		logDebug("Added Authorization header with session cookie: %s", config.SessionCookie[:20]+"...")
 	}
 
 	if config.CSRFToken != "" {
 		// Use CSRF token in X-CSRF-Token header
 		req.Header.Set("X-CSRF-Token", config.CSRFToken)
-		fmt.Printf("🔍 Added CSRF token header: %s\n", config.CSRFToken[:20]+"...")
+		logDebug("Added CSRF token header: %s", config.CSRFToken[:20]+"...")
 	}
 	if config.SessionCookie != "" {
 		req.AddCookie(&http.Cookie{
@@ -945,13 +1007,13 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 	// Use session cookie as Authorization header
 	if config.SessionCookie != "" {
 		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-		fmt.Printf("🔍 Added Authorization header with session cookie: %s\n", config.SessionCookie[:20]+"...")
+		logDebug("Added Authorization header with session cookie: %s", config.SessionCookie[:20]+"...")
 	}
 
 	if config.CSRFToken != "" {
 		// Use CSRF token in X-CSRF-Token header
 		req.Header.Set("X-CSRF-Token", config.CSRFToken)
-		fmt.Printf("🔍 Added CSRF token header: %s\n", config.CSRFToken[:20]+"...")
+		logDebug("Added CSRF token header: %s", config.CSRFToken[:20]+"...")
 	}
 	if config.SessionCookie != "" {
 		req.AddCookie(&http.Cookie{
@@ -995,13 +1057,13 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	// Use session cookie as Authorization header
 	if config.SessionCookie != "" {
 		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-		fmt.Printf("🔍 Added Authorization header with session cookie: %s\n", config.SessionCookie[:20]+"...")
+		logDebug("Added Authorization header with session cookie: %s", config.SessionCookie[:20]+"...")
 	}
 
 	if config.CSRFToken != "" {
 		// Use CSRF token in X-CSRF-Token header
 		req.Header.Set("X-CSRF-Token", config.CSRFToken)
-		fmt.Printf("🔍 Added CSRF token header: %s\n", config.CSRFToken[:20]+"...")
+		logDebug("Added CSRF token header: %s", config.CSRFToken[:20]+"...")
 	}
 	if config.SessionCookie != "" {
 		req.AddCookie(&http.Cookie{

@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+LICENSE
+
+# Build artifacts
+thread-route-updater
+build/
+dist/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+*_test.go
+test/
+
+# Config files (will be mounted as volumes)
+config.env
+*.env
+
+# Temporary files
+*.tmp
+*.log
+
+# Helm chart (will be in separate directory)
+chart/
+
+# GitHub Actions
+.github/

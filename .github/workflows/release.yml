@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Run tests
+      run: go test -v ./...
+
+    - name: Build binary
+      run: |
+        GOOS=linux GOARCH=amd64 go build -o thread-route-updater-linux-amd64 .
+        GOOS=linux GOARCH=arm64 go build -o thread-route-updater-linux-arm64 .
+        GOOS=darwin GOARCH=amd64 go build -o thread-route-updater-darwin-amd64 .
+        GOOS=darwin GOARCH=arm64 go build -o thread-route-updater-darwin-arm64 .
+        GOOS=windows GOARCH=amd64 go build -o thread-route-updater-windows-amd64.exe .
+
+    - name: Create checksums
+      run: |
+        sha256sum thread-route-updater-* > checksums.txt
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          thread-route-updater-*
+          checksums.txt
+        generate_release_notes: true
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-helm-chart:
+    runs-on: ubuntu-latest
+    needs: create-release
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: '3.12.0'
+
+    - name: Package Helm chart
+      run: |
+        helm package chart/thread-route-updater --destination ./packages
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push Helm chart to OCI registry
+      run: |
+        helm push ./packages/thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}
