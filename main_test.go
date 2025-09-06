@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grandcat/zeroconf"
 )
@@ -745,6 +746,471 @@ func TestCalculateCIDR64EdgeCases(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFormatDuration tests the duration formatting function
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		duration time.Duration
+		expected string
+	}{
+		{
+			name:     "Seconds only",
+			duration: 30 * time.Second,
+			expected: "30s",
+		},
+		{
+			name:     "Minutes only",
+			duration: 5 * time.Minute,
+			expected: "5m",
+		},
+		{
+			name:     "Hours only",
+			duration: 2 * time.Hour,
+			expected: "2h",
+		},
+		{
+			name:     "Hours and minutes",
+			duration: 2*time.Hour + 30*time.Minute,
+			expected: "2h30m",
+		},
+		{
+			name:     "Hours with zero minutes",
+			duration: 3 * time.Hour,
+			expected: "3h",
+		},
+		{
+			name:     "Less than a minute",
+			duration: 45 * time.Second,
+			expected: "45s",
+		},
+		{
+			name:     "Zero duration",
+			duration: 0,
+			expected: "0s",
+		},
+		{
+			name:     "Very short duration",
+			duration: 500 * time.Millisecond,
+			expected: "0s", // Less than 1 second rounds to 0
+		},
+		{
+			name:     "Long duration with minutes",
+			duration: 25*time.Hour + 45*time.Minute,
+			expected: "25h45m",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatDuration(tt.duration)
+			if result != tt.expected {
+				t.Errorf("formatDuration(%v) = %s, want %s", tt.duration, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestIsRoutableRouterAddress tests the router address filtering function
+func TestIsRoutableRouterAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		ip       string
+		expected bool
+	}{
+		{
+			name:     "Public IPv6 address should be routable",
+			ip:       "2001:4860:4860::1",
+			expected: true,
+		},
+		{
+			name:     "ULA address should not be routable",
+			ip:       "fd00:1234:5678:9abc::1",
+			expected: false,
+		},
+		{
+			name:     "Link-local address should not be routable",
+			ip:       "fe80::1",
+			expected: false,
+		},
+		{
+			name:     "Loopback address should not be routable",
+			ip:       "::1",
+			expected: false,
+		},
+		{
+			name:     "Unspecified address should not be routable",
+			ip:       "::",
+			expected: false,
+		},
+		{
+			name:     "Multicast address should not be routable",
+			ip:       "ff02::1",
+			expected: false,
+		},
+		{
+			name:     "Documentation address should not be routable",
+			ip:       "2001:db8::1",
+			expected: false,
+		},
+		{
+			name:     "Teredo address should not be routable",
+			ip:       "2001::1",
+			expected: false,
+		},
+		{
+			name:     "6to4 address should not be routable",
+			ip:       "2002::1",
+			expected: false,
+		},
+		{
+			name:     "IPv4 address should not be routable",
+			ip:       "192.168.1.1",
+			expected: false,
+		},
+		{
+			name:     "Nil IP should not be routable",
+			ip:       "",
+			expected: false,
+		},
+		{
+			name:     "Invalid IP should not be routable",
+			ip:       "invalid",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ip net.IP
+			if tt.ip != "" {
+				ip = net.ParseIP(tt.ip)
+			}
+			result := isRoutableRouterAddress(ip)
+			if result != tt.expected {
+				t.Errorf("isRoutableRouterAddress(%s) = %v, want %v", tt.ip, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestCompareRoutesWithGracePeriod tests the grace period logic for route comparison
+func TestCompareRoutesWithGracePeriod(t *testing.T) {
+	now := time.Now()
+	gracePeriod := 10 * time.Minute
+
+	tests := []struct {
+		name         string
+		current      []UbiquityStaticRoute
+		desired      []UbiquityStaticRoute
+		routeLastSeen map[string]time.Time
+		gracePeriod  time.Duration
+		expectedAdd  int
+		expectedRemove int
+	}{
+		{
+			name:    "No routes to add or remove",
+			current: []UbiquityStaticRoute{},
+			desired: []UbiquityStaticRoute{},
+			routeLastSeen: map[string]time.Time{},
+			gracePeriod:   gracePeriod,
+			expectedAdd:   0,
+			expectedRemove: 0,
+		},
+		{
+			name: "Add new route",
+			current: []UbiquityStaticRoute{},
+			desired: []UbiquityStaticRoute{
+				{
+					StaticRouteNetwork: "fd00:1111:2222:3333::/64",
+					StaticRouteNexthop: "2001:4860:4860:1234::ff",
+					Name:               "Thread route via Router1",
+				},
+			},
+			routeLastSeen: map[string]time.Time{},
+			gracePeriod:   gracePeriod,
+			expectedAdd:   1,
+			expectedRemove: 0,
+		},
+		{
+			name: "Route never seen before gets grace period",
+			current: []UbiquityStaticRoute{
+				{
+					ID:                 "route1",
+					StaticRouteNetwork: "fd00:1111:2222:3333::/64",
+					StaticRouteNexthop: "2001:4860:4860:1234::ff",
+					Name:               "Thread route via Router1",
+				},
+			},
+			desired: []UbiquityStaticRoute{},
+			routeLastSeen: map[string]time.Time{},
+			gracePeriod:   gracePeriod,
+			expectedAdd:   0,
+			expectedRemove: 0, // Gets grace period when never seen before
+		},
+		{
+			name: "Route within grace period should not be removed",
+			current: []UbiquityStaticRoute{
+				{
+					ID:                 "route1",
+					StaticRouteNetwork: "fd00:1111:2222:3333::/64",
+					StaticRouteNexthop: "2001:4860:4860:1234::ff",
+					Name:               "Thread route via Router1",
+				},
+			},
+			desired: []UbiquityStaticRoute{},
+			routeLastSeen: map[string]time.Time{
+				"fd00:1111:2222:3333::/64->2001:4860:4860:1234::ff": now.Add(-5 * time.Minute), // 5 minutes ago
+			},
+			gracePeriod:   gracePeriod,
+			expectedAdd:   0,
+			expectedRemove: 0, // Should not be removed yet
+		},
+		{
+			name: "Route beyond grace period should be removed",
+			current: []UbiquityStaticRoute{
+				{
+					ID:                 "route1",
+					StaticRouteNetwork: "fd00:1111:2222:3333::/64",
+					StaticRouteNexthop: "2001:4860:4860:1234::ff",
+					Name:               "Thread route via Router1",
+				},
+			},
+			desired: []UbiquityStaticRoute{},
+			routeLastSeen: map[string]time.Time{
+				"fd00:1111:2222:3333::/64->2001:4860:4860:1234::ff": now.Add(-15 * time.Minute), // 15 minutes ago
+			},
+			gracePeriod:   gracePeriod,
+			expectedAdd:   0,
+			expectedRemove: 1, // Should be removed
+		},
+		{
+			name: "Mixed scenario: add new, keep existing, remove old",
+			current: []UbiquityStaticRoute{
+				{
+					ID:                 "route1",
+					StaticRouteNetwork: "fd00:1111:2222:3333::/64",
+					StaticRouteNexthop: "2001:4860:4860:1234::ff",
+					Name:               "Thread route via Router1",
+				},
+				{
+					ID:                 "route2",
+					StaticRouteNetwork: "fd00:2222:3333:4444::/64",
+					StaticRouteNexthop: "2001:4860:4860:1234::fe",
+					Name:               "Thread route via Router2",
+				},
+			},
+			desired: []UbiquityStaticRoute{
+				{
+					StaticRouteNetwork: "fd00:1111:2222:3333::/64",
+					StaticRouteNexthop: "2001:4860:4860:1234::ff",
+					Name:               "Thread route via Router1",
+				},
+				{
+					StaticRouteNetwork: "fd00:3333:4444:5555::/64",
+					StaticRouteNexthop: "2001:4860:4860:1234::fd",
+					Name:               "Thread route via Router3",
+				},
+			},
+			routeLastSeen: map[string]time.Time{
+				"fd00:2222:3333:4444::/64->2001:4860:4860:1234::fe": now.Add(-15 * time.Minute), // Old, should be removed
+			},
+			gracePeriod:   gracePeriod,
+			expectedAdd:   1, // New route
+			expectedRemove: 1, // Old route beyond grace period
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			toAdd, toRemove := compareRoutesWithGracePeriod(tt.current, tt.desired, tt.routeLastSeen, tt.gracePeriod)
+			
+			if len(toAdd) != tt.expectedAdd {
+				t.Errorf("Expected %d routes to add, got %d", tt.expectedAdd, len(toAdd))
+			}
+			
+			if len(toRemove) != tt.expectedRemove {
+				t.Errorf("Expected %d routes to remove, got %d", tt.expectedRemove, len(toRemove))
+			}
+		})
+	}
+}
+
+// TestCreateHTTPClient tests the HTTP client creation with different configurations
+func TestCreateHTTPClient(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         UbiquityConfig
+		expectInsecure bool
+	}{
+		{
+			name: "Secure SSL configuration",
+			config: UbiquityConfig{
+				InsecureSSL: false,
+			},
+			expectInsecure: false,
+		},
+		{
+			name: "Insecure SSL configuration",
+			config: UbiquityConfig{
+				InsecureSSL: true,
+			},
+			expectInsecure: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := createHTTPClient(tt.config)
+			
+			// Check that client is not nil
+			if client == nil {
+				t.Fatal("Expected HTTP client to be created, got nil")
+			}
+			
+			// Check timeout is set
+			if client.Timeout != 30*time.Second {
+				t.Errorf("Expected timeout to be 30s, got %v", client.Timeout)
+			}
+			
+			// Check transport is configured
+			if client.Transport == nil {
+				t.Fatal("Expected transport to be configured, got nil")
+			}
+			
+			// For more detailed testing, we would need to access the transport's TLS config
+			// This is a basic smoke test to ensure the function works
+		})
+	}
+}
+
+// TestGenerateRoutesEdgeCasesAdvanced tests more edge cases for route generation
+func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
+	t.Run("Devices with invalid IPv6 addresses", func(t *testing.T) {
+		devices := []DeviceInfo{
+			{
+				Name:     "Device1",
+				IPv6Addr: nil, // Invalid IP
+				Services: []string{"_matter._tcp"},
+			},
+			{
+				Name:     "Device2",
+				IPv6Addr: net.ParseIP("192.168.1.1"), // IPv4 address
+				Services: []string{"_matter._tcp"},
+			},
+		}
+		routers := []ThreadBorderRouter{
+			{
+				Name:     "Router1",
+				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"),
+				CIDR:     "2001:4860:4860:1234::/64",
+			},
+		}
+
+		routes := generateRoutes(devices, routers)
+		if len(routes) != 0 {
+			t.Errorf("Expected 0 routes with invalid device IPs, got %d", len(routes))
+		}
+	})
+
+	t.Run("Routers with invalid IPv6 addresses", func(t *testing.T) {
+		devices := []DeviceInfo{
+			{
+				Name:     "Device1",
+				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
+				Services: []string{"_matter._tcp"},
+			},
+		}
+		routers := []ThreadBorderRouter{
+			{
+				Name:     "Router1",
+				IPv6Addr: nil, // Invalid IP
+				CIDR:     "2001:4860:4860:1234::/64",
+			},
+			{
+				Name:     "Router2",
+				IPv6Addr: net.ParseIP("192.168.1.1"), // IPv4 address
+				CIDR:     "2001:4860:4860:1234::/64",
+			},
+		}
+
+		routes := generateRoutes(devices, routers)
+		if len(routes) != 0 {
+			t.Errorf("Expected 0 routes with invalid router IPs, got %d", len(routes))
+		}
+	})
+
+	t.Run("Devices and routers in same CIDR (should not generate routes)", func(t *testing.T) {
+		devices := []DeviceInfo{
+			{
+				Name:     "Device1",
+				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
+				Services: []string{"_matter._tcp"},
+			},
+		}
+		routers := []ThreadBorderRouter{
+			{
+				Name:     "Router1",
+				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"),
+				CIDR:     "fd00:1111:2222:3333::/64", // Same CIDR as devices
+			},
+		}
+
+		routes := generateRoutes(devices, routers)
+		if len(routes) != 0 {
+			t.Errorf("Expected 0 routes when devices and routers are in same CIDR, got %d", len(routes))
+		}
+	})
+
+	t.Run("Non-routable device CIDRs should be filtered out", func(t *testing.T) {
+		devices := []DeviceInfo{
+			{
+				Name:     "Device1",
+				IPv6Addr: net.ParseIP("fe80::1"), // Link-local
+				Services: []string{"_matter._tcp"},
+			},
+			{
+				Name:     "Device2",
+				IPv6Addr: net.ParseIP("ff02::1"), // Multicast
+				Services: []string{"_matter._tcp"},
+			},
+		}
+		routers := []ThreadBorderRouter{
+			{
+				Name:     "Router1",
+				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"),
+				CIDR:     "2001:4860:4860:1234::/64",
+			},
+		}
+
+		routes := generateRoutes(devices, routers)
+		if len(routes) != 0 {
+			t.Errorf("Expected 0 routes with non-routable device CIDRs, got %d", len(routes))
+		}
+	})
+
+	t.Run("Router with non-routable CIDR but valid IPv6 address should still generate routes", func(t *testing.T) {
+		devices := []DeviceInfo{
+			{
+				Name:     "Device1",
+				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
+				Services: []string{"_matter._tcp"},
+			},
+		}
+		routers := []ThreadBorderRouter{
+			{
+				Name:     "Router1",
+				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"), // Valid public IPv6
+				CIDR:     "fe80::/64", // Link-local CIDR (this is just metadata)
+			},
+		}
+
+		routes := generateRoutes(devices, routers)
+		if len(routes) != 1 {
+			t.Errorf("Expected 1 route with valid router IPv6 address, got %d", len(routes))
+		}
+	})
 }
 
 // TestExtractRouterNameEdgeCases tests edge cases for router name extraction
