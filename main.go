@@ -1,0 +1,1207 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/grandcat/zeroconf"
+)
+
+// DeviceInfo represents a discovered Matter device
+type DeviceInfo struct {
+	Name     string
+	IPv6Addr net.IP
+	Services []string
+}
+
+// ThreadBorderRouter represents a discovered Thread Border Router
+type ThreadBorderRouter struct {
+	Name     string
+	IPv6Addr net.IP
+	CIDR     string
+}
+
+// Route represents a routing entry
+type Route struct {
+	CIDR             string
+	ThreadRouterIPv6 string
+	RouterName       string
+}
+
+// DaemonState holds the current state of discovered devices and routers
+type DaemonState struct {
+	MatterDevices       []DeviceInfo
+	ThreadBorderRouters []ThreadBorderRouter
+	Routes              []Route
+	LastUpdate          time.Time
+	UbiquityConfig      UbiquityConfig
+	AddedRoutes         map[string]bool // Track routes we've added to prevent duplicates
+}
+
+// UbiquityConfig holds configuration for Ubiquity router API
+type UbiquityConfig struct {
+	RouterHostname string
+	Username       string
+	Password       string
+	APIBaseURL     string
+	InsecureSSL    bool
+	Enabled        bool
+	SessionToken   string // Device token for API requests
+	CSRFToken      string // CSRF token for API requests
+	SessionCookie  string // Session cookie for API requests
+	LastLoginTime  int64  // Timestamp of last successful login
+}
+
+// UbiquityStaticRoute represents a static route in Ubiquity format
+type UbiquityStaticRoute struct {
+	ID                 string `json:"_id,omitempty"`
+	Enabled            bool   `json:"enabled"`
+	Name               string `json:"name"`
+	Type               string `json:"type"`
+	StaticRouteNexthop string `json:"static-route_nexthop"`
+	StaticRouteNetwork string `json:"static-route_network"`
+	StaticRouteType    string `json:"static-route_type"`
+	GatewayType        string `json:"gateway_type"`
+	GatewayDevice      string `json:"gateway_device"`
+	SiteID             string `json:"site_id,omitempty"`
+}
+
+// UbiquityAPIResponse represents the API response structure
+type UbiquityAPIResponse struct {
+	Meta struct {
+		RC string `json:"rc"`
+	} `json:"meta"`
+	Data []UbiquityStaticRoute `json:"data,omitempty"`
+}
+
+// UbiquityLoginRequest represents the login request
+type UbiquityLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// UbiquityLoginResponse represents the login response
+type UbiquityLoginResponse struct {
+	Meta struct {
+		RC string `json:"rc"`
+	} `json:"meta"`
+	Data []struct {
+		XCsrfToken string `json:"x-csrf-token"`
+	} `json:"data"`
+}
+
+func main() {
+	fmt.Println("🚀 Starting Thread Route Updater Daemon...")
+	fmt.Println("📡 Continuously monitoring for Matter devices and Thread Border Routers...")
+	fmt.Println("🔄 Press Ctrl+C to stop")
+	fmt.Println()
+
+	// Create initial state
+	state := &DaemonState{
+		MatterDevices:       []DeviceInfo{},
+		ThreadBorderRouters: []ThreadBorderRouter{},
+		Routes:              []Route{},
+		LastUpdate:          time.Now(),
+		UbiquityConfig:      getUbiquityConfig(),
+		AddedRoutes:         make(map[string]bool),
+	}
+
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start continuous monitoring
+	go monitorMatterDevices(state)
+	go monitorThreadBorderRouters(state)
+
+	// Periodic refresh every 5 minutes to catch devices that might have been missed
+	go periodicRefresh(state)
+
+	// Display loop
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			displayCurrentState(state)
+		case sig := <-sigChan:
+			fmt.Printf("\n🛑 Received signal %v, shutting down gracefully...\n", sig)
+			return
+		}
+	}
+}
+
+// monitorMatterDevices continuously monitors for Matter devices
+func monitorMatterDevices(state *DaemonState) {
+	// Initial discovery
+	devices, err := discoverMatterDevices()
+	if err != nil {
+		fmt.Printf("❌ Error discovering Matter devices: %v\n", err)
+	} else {
+		state.MatterDevices = devices
+		state.LastUpdate = time.Now()
+	}
+
+	// Then just listen for announcements (passive monitoring)
+	listenForMatterDevices(state)
+}
+
+// monitorThreadBorderRouters continuously monitors for Thread Border Routers
+func monitorThreadBorderRouters(state *DaemonState) {
+	// Initial discovery
+	routers, err := discoverThreadBorderRouters()
+	if err != nil {
+		fmt.Printf("❌ Error discovering Thread Border Routers: %v\n", err)
+	} else {
+		state.ThreadBorderRouters = routers
+		state.LastUpdate = time.Now()
+	}
+
+	// Then just listen for announcements (passive monitoring)
+	listenForThreadBorderRouters(state)
+}
+
+// displayCurrentState displays the current state of discovered devices and routes
+func displayCurrentState(state *DaemonState) {
+	// Clear screen and show header
+	fmt.Print("\033[2J\033[H")
+	fmt.Println("🔍 Thread Route Updater Daemon - Live Status")
+	fmt.Println("==================================================")
+	fmt.Printf("📅 Last Update: %s\n", state.LastUpdate.Format("15:04:05"))
+	fmt.Println()
+
+	// Show discovered devices
+	fmt.Printf("📱 Matter Devices: %d\n", len(state.MatterDevices))
+	for i, device := range state.MatterDevices {
+		if i < 5 { // Show first 5 devices
+			fmt.Printf("  • %s -> %s\n", device.Name, device.IPv6Addr.String())
+		} else if i == 5 {
+			fmt.Printf("  ... and %d more\n", len(state.MatterDevices)-5)
+		}
+	}
+	fmt.Println()
+
+	// Show discovered Thread Border Routers
+	fmt.Printf("🌐 Thread Border Routers: %d\n", len(state.ThreadBorderRouters))
+	for _, router := range state.ThreadBorderRouters {
+		fmt.Printf("  • %s -> %s (%s)\n", router.Name, router.IPv6Addr.String(), router.CIDR)
+	}
+	fmt.Println()
+
+	// Generate and show current routes
+	routes := generateRoutes(state.MatterDevices, state.ThreadBorderRouters)
+	state.Routes = routes
+
+	if len(routes) > 0 {
+		fmt.Println("🛣️  Current Routes:")
+		for _, route := range routes {
+			fmt.Printf("  %s -> %s (%s)\n", route.CIDR, route.ThreadRouterIPv6, route.RouterName)
+		}
+
+		// Update Ubiquity router if enabled
+		if state.UbiquityConfig.Enabled {
+			go updateUbiquityRoutes(state, routes)
+		}
+	} else {
+		fmt.Println("⚠️  No routes available (no Thread networks detected)")
+	}
+
+	fmt.Println()
+	fmt.Println("🔄 Monitoring... (Next update in 5s)")
+}
+
+// discoverMatterDevices discovers Matter devices using mDNS
+func discoverMatterDevices() ([]DeviceInfo, error) {
+	var devices []DeviceInfo
+	serviceType := "_matter._tcp"
+
+	serviceDevices, err := discoverService(serviceType, "Matter")
+	if err != nil {
+		return devices, fmt.Errorf("error discovering %s: %v", serviceType, err)
+	}
+	devices = append(devices, serviceDevices...)
+
+	return devices, nil
+}
+
+// discoverThreadBorderRouters discovers Thread Border Routers using mDNS
+func discoverThreadBorderRouters() ([]ThreadBorderRouter, error) {
+	var routers []ThreadBorderRouter
+	serviceType := "_meshcop._udp"
+
+	serviceRouters, err := discoverThreadService(serviceType)
+	if err != nil {
+		return routers, fmt.Errorf("error discovering %s: %v", serviceType, err)
+	}
+	routers = append(routers, serviceRouters...)
+
+	return routers, nil
+}
+
+// discoverService discovers services of a specific type
+func discoverService(serviceType, deviceType string) ([]DeviceInfo, error) {
+	var devices []DeviceInfo
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Browse for services
+	resolver, err := zeroconf.NewResolver(nil)
+	if err != nil {
+		return devices, fmt.Errorf("failed to initialize resolver: %v", err)
+	}
+
+	entries := make(chan *zeroconf.ServiceEntry)
+	done := make(chan bool)
+
+	go func() {
+		defer func() {
+			select {
+			case <-done:
+				// Channel already closed
+			default:
+				close(entries)
+			}
+		}()
+		err := resolver.Browse(ctx, serviceType, "local.", entries)
+		if err != nil {
+			fmt.Printf("Failed to browse: %v\n", err)
+		}
+	}()
+
+	// Process entries
+	for entry := range entries {
+		if entry == nil {
+			continue
+		}
+
+		ipv6Addrs := extractIPv6Addresses(entry)
+		if len(ipv6Addrs) == 0 {
+			continue
+		}
+
+		for _, ip := range ipv6Addrs {
+			device := DeviceInfo{
+				Name:     entry.Instance,
+				IPv6Addr: ip,
+				Services: []string{serviceType},
+			}
+			devices = append(devices, device)
+		}
+	}
+
+	// Signal that we're done processing
+	close(done)
+
+	return devices, nil
+}
+
+// discoverThreadService discovers Thread services
+func discoverThreadService(serviceType string) ([]ThreadBorderRouter, error) {
+	var routers []ThreadBorderRouter
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Browse for services
+	resolver, err := zeroconf.NewResolver(nil)
+	if err != nil {
+		return routers, fmt.Errorf("failed to initialize resolver: %v", err)
+	}
+
+	entries := make(chan *zeroconf.ServiceEntry)
+	done := make(chan bool)
+
+	go func() {
+		defer func() {
+			select {
+			case <-done:
+				// Channel already closed
+			default:
+				close(entries)
+			}
+		}()
+		err := resolver.Browse(ctx, serviceType, "local.", entries)
+		if err != nil {
+			fmt.Printf("Failed to browse: %v\n", err)
+		}
+	}()
+
+	// Process entries
+	for entry := range entries {
+		if entry == nil {
+			continue
+		}
+
+		ipv6Addrs := extractIPv6Addresses(entry)
+		if len(ipv6Addrs) == 0 {
+			continue
+		}
+
+		for _, ip := range ipv6Addrs {
+			router := ThreadBorderRouter{
+				Name:     extractRouterName(entry.Instance),
+				IPv6Addr: ip,
+				CIDR:     calculateCIDR64(ip),
+			}
+			routers = append(routers, router)
+		}
+	}
+
+	// Signal that we're done processing
+	close(done)
+
+	return routers, nil
+}
+
+// extractIPv6Addresses extracts IPv6 addresses from zeroconf entry
+func extractIPv6Addresses(entry *zeroconf.ServiceEntry) []net.IP {
+	var ipv6Addrs []net.IP
+
+	// Only use real IPv6 addresses, not IPv4 mapped addresses
+	if entry.AddrIPv6 != nil {
+		for _, ip := range entry.AddrIPv6 {
+			// Check if it's a real IPv6 address (not IPv4 mapped)
+			if ip.To4() == nil && ip.To16() != nil {
+				ipv6Addrs = append(ipv6Addrs, ip)
+			}
+		}
+	}
+
+	// For Thread networks, we need IPv6 addresses
+	// If no IPv6 addresses found, skip this device
+	if len(ipv6Addrs) == 0 {
+		return ipv6Addrs
+	}
+
+	return ipv6Addrs
+}
+
+// calculateCIDR64 calculates the /64 CIDR block for an IPv6 address
+func calculateCIDR64(ip net.IP) string {
+	if ip == nil {
+		return ""
+	}
+
+	// For IPv4 addresses, return a placeholder
+	if ip.To4() != nil {
+		return "::/64"
+	}
+
+	// For IPv6 addresses, calculate /64 CIDR
+	if ip.To16() != nil {
+		// Take the first 8 bytes (64 bits) and set the rest to 0
+		cidr := make(net.IP, 16)
+		copy(cidr, ip[:8])
+		return fmt.Sprintf("%s/64", cidr.String())
+	}
+
+	return ""
+}
+
+// extractRouterName extracts the simple router name from its FQDN
+func extractRouterName(fqdn string) string {
+	if idx := strings.Index(fqdn, "."); idx != -1 {
+		return fqdn[:idx]
+	}
+	return fqdn
+}
+
+// isRoutableCIDR checks if a CIDR block is routable (not link-local, loopback, etc.)
+func isRoutableCIDR(cidr string) bool {
+	// Parse the CIDR to get the network
+	_, network, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return false
+	}
+
+	ip := network.IP
+
+	// Check for non-routable IPv6 address ranges
+	// fe80::/10 - Link-local addresses
+	if ip[0] == 0xfe && (ip[1]&0xc0) == 0x80 {
+		return false
+	}
+
+	// ::1/128 - Loopback address
+	if ip.Equal(net.ParseIP("::1")) {
+		return false
+	}
+
+	// ::/128 - Unspecified address
+	if ip.Equal(net.ParseIP("::")) {
+		return false
+	}
+
+	// ff00::/8 - Multicast addresses
+	if ip[0] == 0xff {
+		return false
+	}
+
+	// 2001:db8::/32 - Documentation prefix (should not be routed)
+	if len(ip) >= 4 && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
+		return false
+	}
+
+	// 2001::/32 - Teredo tunneling (usually not routed)
+	if len(ip) >= 4 && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x00 && ip[3] == 0x00 {
+		return false
+	}
+
+	// 2002::/16 - 6to4 tunneling (deprecated, usually not routed)
+	if len(ip) >= 2 && ip[0] == 0x20 && ip[1] == 0x02 {
+		return false
+	}
+
+	return true
+}
+
+// generateRoutes generates routing entries from discovered devices and routers
+func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route {
+	var routes []Route
+	routeMap := make(map[string]Route)
+
+	// Collect unique CIDR blocks from Matter devices
+	deviceCIDRs := make(map[string]bool)
+	for _, device := range devices {
+		deviceCIDR := calculateCIDR64(device.IPv6Addr)
+		if deviceCIDR != "" && deviceCIDR != "::/64" && isRoutableCIDR(deviceCIDR) {
+			deviceCIDRs[deviceCIDR] = true
+		}
+	}
+
+	// Collect unique CIDR blocks from Thread Border Routers
+	routerCIDRs := make(map[string]bool)
+	for _, router := range routers {
+		if router.CIDR != "" && router.CIDR != "::/64" && isRoutableCIDR(router.CIDR) {
+			routerCIDRs[router.CIDR] = true
+		}
+	}
+
+	// Generate routes for device CIDRs that are not router CIDRs
+	for deviceCIDR := range deviceCIDRs {
+		// Skip if this CIDR is the same as a router CIDR (main network)
+		if routerCIDRs[deviceCIDR] {
+			continue
+		}
+
+		// Create routes to all available Thread Border Routers
+		for _, router := range routers {
+			routeKey := fmt.Sprintf("%s->%s", deviceCIDR, router.IPv6Addr.String())
+			route := Route{
+				CIDR:             deviceCIDR,
+				ThreadRouterIPv6: router.IPv6Addr.String(),
+				RouterName:       router.Name,
+			}
+			routeMap[routeKey] = route
+		}
+	}
+
+	// Convert map to slice
+	for _, route := range routeMap {
+		routes = append(routes, route)
+	}
+
+	return routes
+}
+
+// listenForMatterDevices passively listens for Matter device announcements
+func listenForMatterDevices(state *DaemonState) {
+	resolver, err := zeroconf.NewResolver(nil)
+	if err != nil {
+		fmt.Printf("❌ Failed to initialize resolver for Matter devices: %v\n", err)
+		return
+	}
+
+	entries := make(chan *zeroconf.ServiceEntry)
+	done := make(chan bool)
+
+	// Start listening for announcements
+	go func() {
+		defer func() {
+			select {
+			case <-done:
+				// Channel already closed
+			default:
+				close(entries)
+			}
+		}()
+
+		// Use a longer timeout for passive listening
+		ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
+		defer cancel()
+
+		err := resolver.Browse(ctx, "_matter._tcp", "local.", entries)
+		if err != nil {
+			fmt.Printf("❌ Failed to browse for Matter devices: %v\n", err)
+		}
+	}()
+
+	// Process announcements as they come in
+	for entry := range entries {
+		if entry == nil {
+			continue
+		}
+
+		ipv6Addrs := extractIPv6Addresses(entry)
+		if len(ipv6Addrs) == 0 {
+			continue
+		}
+
+		// Add new device or update existing one
+		for _, ip := range ipv6Addrs {
+			device := DeviceInfo{
+				Name:     entry.Instance,
+				IPv6Addr: ip,
+				Services: []string{"_matter._tcp"},
+			}
+
+			// Check if device already exists
+			found := false
+			for i, existingDevice := range state.MatterDevices {
+				if existingDevice.Name == device.Name && existingDevice.IPv6Addr.Equal(device.IPv6Addr) {
+					state.MatterDevices[i] = device
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				state.MatterDevices = append(state.MatterDevices, device)
+			}
+		}
+
+		state.LastUpdate = time.Now()
+	}
+
+	close(done)
+}
+
+// listenForThreadBorderRouters passively listens for Thread Border Router announcements
+func listenForThreadBorderRouters(state *DaemonState) {
+	resolver, err := zeroconf.NewResolver(nil)
+	if err != nil {
+		fmt.Printf("❌ Failed to initialize resolver for Thread Border Routers: %v\n", err)
+		return
+	}
+
+	entries := make(chan *zeroconf.ServiceEntry)
+	done := make(chan bool)
+
+	// Start listening for announcements
+	go func() {
+		defer func() {
+			select {
+			case <-done:
+				// Channel already closed
+			default:
+				close(entries)
+			}
+		}()
+
+		// Use a longer timeout for passive listening
+		ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
+		defer cancel()
+
+		err := resolver.Browse(ctx, "_meshcop._udp", "local.", entries)
+		if err != nil {
+			fmt.Printf("❌ Failed to browse for Thread Border Routers: %v\n", err)
+		}
+	}()
+
+	// Process announcements as they come in
+	for entry := range entries {
+		if entry == nil {
+			continue
+		}
+
+		ipv6Addrs := extractIPv6Addresses(entry)
+		if len(ipv6Addrs) == 0 {
+			continue
+		}
+
+		// Add new router or update existing one
+		for _, ip := range ipv6Addrs {
+			router := ThreadBorderRouter{
+				Name:     extractRouterName(entry.Instance),
+				IPv6Addr: ip,
+				CIDR:     calculateCIDR64(ip),
+			}
+
+			// Check if router already exists
+			found := false
+			for i, existingRouter := range state.ThreadBorderRouters {
+				if existingRouter.Name == router.Name && existingRouter.IPv6Addr.Equal(router.IPv6Addr) {
+					state.ThreadBorderRouters[i] = router
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				state.ThreadBorderRouters = append(state.ThreadBorderRouters, router)
+			}
+		}
+
+		state.LastUpdate = time.Now()
+	}
+
+	close(done)
+}
+
+// periodicRefresh performs a gentle refresh every 5 minutes to catch any devices that might have been missed
+func periodicRefresh(state *DaemonState) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// Gentle refresh - only if we haven't seen updates in a while
+			if time.Since(state.LastUpdate) > 2*time.Minute {
+				fmt.Println("🔄 Performing gentle refresh...")
+
+				// Quick discovery without overwhelming the network
+				devices, err := discoverMatterDevices()
+				if err == nil && len(devices) > 0 {
+					state.MatterDevices = devices
+				}
+
+				routers, err := discoverThreadBorderRouters()
+				if err == nil && len(routers) > 0 {
+					state.ThreadBorderRouters = routers
+				}
+
+				state.LastUpdate = time.Now()
+			}
+		}
+	}
+}
+
+// getUbiquityConfig returns the Ubiquity router configuration
+func getUbiquityConfig() UbiquityConfig {
+	// Get configuration from environment variables or use defaults
+	routerHostname := os.Getenv("UBIQUITY_ROUTER_HOSTNAME")
+	if routerHostname == "" {
+		routerHostname = "unifi.local" // Default router hostname
+	}
+
+	username := os.Getenv("UBIQUITY_USERNAME")
+	if username == "" {
+		username = "ubnt" // Default username
+	}
+
+	password := os.Getenv("UBIQUITY_PASSWORD")
+	if password == "" {
+		password = "ubnt" // Default password
+	}
+
+	enabled := os.Getenv("UBIQUITY_ENABLED") == "true"
+
+	return UbiquityConfig{
+		RouterHostname: routerHostname,
+		Username:       username,
+		Password:       password,
+		APIBaseURL:     fmt.Sprintf("https://%s", routerHostname),
+		InsecureSSL:    os.Getenv("UBIQUITY_INSECURE_SSL") == "true",
+		Enabled:        enabled,
+	}
+}
+
+// updateUbiquityRoutes updates the static routes on the Ubiquity router
+func updateUbiquityRoutes(state *DaemonState, routes []Route) {
+	if !state.UbiquityConfig.Enabled {
+		return
+	}
+
+	fmt.Println("🔄 Updating Ubiquity router static routes...")
+
+	// Check if we have valid session tokens and they're not too old
+	// Only re-authenticate if we don't have tokens or they're expired
+	currentTime := time.Now().Unix()
+	timeSinceLastLogin := currentTime - state.UbiquityConfig.LastLoginTime
+
+	if state.UbiquityConfig.SessionCookie == "" || state.UbiquityConfig.CSRFToken == "" {
+		fmt.Println("🔐 No valid session tokens, authenticating...")
+		err := loginToUbiquity(&state.UbiquityConfig)
+		if err != nil {
+			fmt.Printf("❌ Failed to login to Ubiquity router: %v\n", err)
+			return
+		}
+	} else if timeSinceLastLogin > 300 { // 5 minutes
+		fmt.Printf("🔐 Session tokens expired (%d seconds old), re-authenticating...\n", timeSinceLastLogin)
+		err := loginToUbiquity(&state.UbiquityConfig)
+		if err != nil {
+			fmt.Printf("❌ Failed to login to Ubiquity router: %v\n", err)
+			return
+		}
+	} else {
+		fmt.Printf("🔍 Using existing session tokens (%d seconds old)...\n", timeSinceLastLogin)
+	}
+
+	// Get current routes from router
+	currentRoutes, err := getUbiquityStaticRoutes(state.UbiquityConfig)
+	if err != nil {
+		fmt.Printf("❌ Failed to get current routes: %v\n", err)
+		// If we get a rate limit error, don't try to re-login immediately
+		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "AUTHENTICATION_FAILED_LIMIT_REACHED") {
+			fmt.Println("⚠️ Rate limit reached, skipping this update cycle...")
+			// Clear all session tokens to force fresh login next time
+			state.UbiquityConfig.SessionToken = ""
+			state.UbiquityConfig.SessionCookie = ""
+			state.UbiquityConfig.CSRFToken = ""
+			return
+		}
+		// For other auth errors, try to re-login and retry once
+		state.UbiquityConfig.SessionToken = ""
+		state.UbiquityConfig.SessionCookie = ""
+		state.UbiquityConfig.CSRFToken = ""
+		err = loginToUbiquity(&state.UbiquityConfig)
+		if err != nil {
+			fmt.Printf("❌ Failed to re-login to Ubiquity router: %v\n", err)
+			return
+		}
+		currentRoutes, err = getUbiquityStaticRoutes(state.UbiquityConfig)
+		if err != nil {
+			fmt.Printf("❌ Failed to get current routes after re-login: %v\n", err)
+			return
+		}
+	}
+
+	// Convert our routes to Ubiquity format
+	desiredRoutes := convertToUbiquityRoutes(routes)
+
+	// Debug: Print current and desired routes
+	fmt.Printf("🔍 Current routes from API: %d\n", len(currentRoutes))
+	for i, route := range currentRoutes {
+		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+	}
+	fmt.Printf("🔍 Desired routes: %d\n", len(desiredRoutes))
+	for i, route := range desiredRoutes {
+		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+	}
+
+	// Find routes to add and remove
+	routesToAdd, routesToRemove := compareRoutes(currentRoutes, desiredRoutes)
+
+	// Filter out routes we've already added (in-memory tracking)
+	var newRoutesToAdd []UbiquityStaticRoute
+	for _, route := range routesToAdd {
+		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		if !state.AddedRoutes[key] {
+			newRoutesToAdd = append(newRoutesToAdd, route)
+			state.AddedRoutes[key] = true // Mark as added
+		} else {
+			fmt.Printf("⏭️  Skipping already added route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		}
+	}
+	routesToAdd = newRoutesToAdd
+
+	// Add a small delay after adding routes to allow them to be indexed
+	if len(routesToAdd) > 0 {
+		fmt.Printf("⏳ Adding %d new routes, waiting 2 seconds for indexing...\n", len(routesToAdd))
+		time.Sleep(2 * time.Second)
+	}
+
+	// Remove old routes
+	for _, route := range routesToRemove {
+		if err := deleteUbiquityStaticRoute(state.UbiquityConfig, route.ID); err != nil {
+			fmt.Printf("❌ Failed to delete route %s: %v\n", route.StaticRouteNetwork, err)
+		} else {
+			fmt.Printf("✅ Deleted route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		}
+	}
+
+	// Add new routes
+	for _, route := range routesToAdd {
+		if err := addUbiquityStaticRoute(state.UbiquityConfig, route); err != nil {
+			fmt.Printf("❌ Failed to add route %s: %v\n", route.StaticRouteNetwork, err)
+		} else {
+			fmt.Printf("✅ Added route: %s -> %s (%s)\n", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+		}
+	}
+
+	if len(routesToAdd) == 0 && len(routesToRemove) == 0 {
+		fmt.Println("✅ Ubiquity routes are up to date")
+	}
+}
+
+// getUbiquityStaticRoutes retrieves current static routes from the router
+func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, error) {
+	client := createHTTPClient(config)
+
+	// Try the UDM Pro endpoint first
+	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL)
+	fmt.Printf("🔍 Trying UDM Pro endpoint for reading: %s\n", url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add session authentication
+	req.Header.Set("Content-Type", "application/json")
+
+	// Use session cookie as Authorization header
+	if config.SessionCookie != "" {
+		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
+		fmt.Printf("🔍 Added Authorization header with session cookie: %s\n", config.SessionCookie[:20]+"...")
+	}
+
+	if config.CSRFToken != "" {
+		// Use CSRF token in X-CSRF-Token header
+		req.Header.Set("X-CSRF-Token", config.CSRFToken)
+		fmt.Printf("🔍 Added CSRF token header: %s\n", config.CSRFToken[:20]+"...")
+	}
+	if config.SessionCookie != "" {
+		req.AddCookie(&http.Cookie{
+			Name:  "TOKEN",
+			Value: config.SessionCookie,
+		})
+		fmt.Printf("🔍 Added session cookie (TOKEN) to request: %s\n", config.SessionCookie[:20]+"...")
+	} else {
+		fmt.Printf("⚠️ No session cookie available for request\n")
+	}
+
+	fmt.Printf("🔍 Making API request to: %s\n", url)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Read the response body for debugging
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Debug: Print the raw response
+	fmt.Printf("🔍 Raw API response: %s\n", string(body))
+
+	var apiResp UbiquityAPIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON response: %v", err)
+	}
+
+	fmt.Printf("🔍 Parsed response - RC: %s, Data count: %d\n", apiResp.Meta.RC, len(apiResp.Data))
+
+	if apiResp.Meta.RC != "ok" {
+		return nil, fmt.Errorf("API returned error: %s", apiResp.Meta.RC)
+	}
+
+	return apiResp.Data, nil
+}
+
+// addUbiquityStaticRoute adds a new static route to the router
+func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) error {
+	client := createHTTPClient(config)
+
+	// Try the UDM Pro/UCG Max endpoint first
+	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL)
+	fmt.Printf("🔍 Trying UDM Pro endpoint: %s\n", url)
+
+	// First, let's see what the current routes look like to understand the expected format
+	fmt.Printf("🔍 Getting current routes to understand the expected format...\n")
+	currentRoutes, err := getUbiquityStaticRoutes(config)
+	if err != nil {
+		fmt.Printf("⚠️ Could not get current routes for format reference: %v\n", err)
+	} else {
+		fmt.Printf("🔍 Current routes format: %+v\n", currentRoutes)
+	}
+
+	jsonData, err := json.Marshal(route)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("🔍 Sending JSON data: %s\n", string(jsonData))
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	// Add session authentication
+	req.Header.Set("Content-Type", "application/json")
+
+	// Use session cookie as Authorization header
+	if config.SessionCookie != "" {
+		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
+		fmt.Printf("🔍 Added Authorization header with session cookie: %s\n", config.SessionCookie[:20]+"...")
+	}
+
+	if config.CSRFToken != "" {
+		// Use CSRF token in X-CSRF-Token header
+		req.Header.Set("X-CSRF-Token", config.CSRFToken)
+		fmt.Printf("🔍 Added CSRF token header: %s\n", config.CSRFToken[:20]+"...")
+	}
+	if config.SessionCookie != "" {
+		req.AddCookie(&http.Cookie{
+			Name:  "TOKEN",
+			Value: config.SessionCookie,
+		})
+		fmt.Printf("🔍 Added session cookie (TOKEN) to request: %s\n", config.SessionCookie[:20]+"...")
+	} else {
+		fmt.Printf("⚠️ No session cookie available for request\n")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// deleteUbiquityStaticRoute deletes a static route from the router
+func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
+	client := createHTTPClient(config)
+
+	// Try the legacy endpoint first (might support IPv6 better)
+	url := fmt.Sprintf("%s/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
+	fmt.Printf("🔍 Trying legacy endpoint: %s\n", url)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+
+	// Add session authentication
+	req.Header.Set("Content-Type", "application/json")
+
+	// Use session cookie as Authorization header
+	if config.SessionCookie != "" {
+		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
+		fmt.Printf("🔍 Added Authorization header with session cookie: %s\n", config.SessionCookie[:20]+"...")
+	}
+
+	if config.CSRFToken != "" {
+		// Use CSRF token in X-CSRF-Token header
+		req.Header.Set("X-CSRF-Token", config.CSRFToken)
+		fmt.Printf("🔍 Added CSRF token header: %s\n", config.CSRFToken[:20]+"...")
+	}
+	if config.SessionCookie != "" {
+		req.AddCookie(&http.Cookie{
+			Name:  "TOKEN",
+			Value: config.SessionCookie,
+		})
+		fmt.Printf("🔍 Added session cookie (TOKEN) to request: %s\n", config.SessionCookie[:20]+"...")
+	} else {
+		fmt.Printf("⚠️ No session cookie available for request\n")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createHTTPClient creates an HTTP client with appropriate settings
+func createHTTPClient(config UbiquityConfig) *http.Client {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: config.InsecureSSL,
+		},
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
+}
+
+// convertToUbiquityRoutes converts our Route format to Ubiquity format
+func convertToUbiquityRoutes(routes []Route) []UbiquityStaticRoute {
+	var ubiquityRoutes []UbiquityStaticRoute
+
+	for _, route := range routes {
+		// Remove escaping from router name for cleaner display
+		cleanRouterName := strings.ReplaceAll(route.RouterName, "\\", "")
+
+		// Use the correct Ubiquiti field structure
+		ubiquityRoute := UbiquityStaticRoute{
+			Enabled:            true,
+			Name:               fmt.Sprintf("Thread route via %s", cleanRouterName),
+			Type:               "static-route",
+			StaticRouteNexthop: route.ThreadRouterIPv6,
+			StaticRouteNetwork: route.CIDR,
+			StaticRouteType:    "nexthop-route",
+			GatewayType:        "default",
+			GatewayDevice:      "1c:0b:8b:12:64:88", // TODO: Get actual gateway device MAC
+		}
+		ubiquityRoutes = append(ubiquityRoutes, ubiquityRoute)
+	}
+
+	return ubiquityRoutes
+}
+
+// compareRoutes compares current and desired routes to find what needs to be added/removed
+func compareRoutes(current, desired []UbiquityStaticRoute) ([]UbiquityStaticRoute, []UbiquityStaticRoute) {
+	var toAdd []UbiquityStaticRoute
+	var toRemove []UbiquityStaticRoute
+
+	// Create a map of desired routes for quick lookup
+	desiredMap := make(map[string]UbiquityStaticRoute)
+	for _, route := range desired {
+		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		desiredMap[key] = route
+	}
+
+	// Find routes to remove (in current but not in desired)
+	for _, currentRoute := range current {
+		key := fmt.Sprintf("%s->%s", currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop)
+		if _, exists := desiredMap[key]; !exists {
+			// Only remove Thread routes (routes with our name pattern)
+			if strings.Contains(currentRoute.Name, "Thread route via") {
+				toRemove = append(toRemove, currentRoute)
+			}
+		}
+	}
+
+	// Find routes to add (in desired but not in current)
+	currentMap := make(map[string]bool)
+	for _, route := range current {
+		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		currentMap[key] = true
+	}
+
+	for _, desiredRoute := range desired {
+		key := fmt.Sprintf("%s->%s", desiredRoute.StaticRouteNetwork, desiredRoute.StaticRouteNexthop)
+		if !currentMap[key] {
+			toAdd = append(toAdd, desiredRoute)
+		}
+	}
+
+	return toAdd, toRemove
+}
+
+// loginToUbiquity authenticates with the Ubiquity router and gets a session token
+func loginToUbiquity(config *UbiquityConfig) error {
+	client := createHTTPClient(*config)
+
+	// Login endpoint
+	url := fmt.Sprintf("%s/api/auth/login", config.APIBaseURL)
+	fmt.Printf("🔍 Attempting login to: %s\n", url)
+
+	loginReq := UbiquityLoginRequest{
+		Username: config.Username,
+		Password: config.Password,
+	}
+
+	jsonData, err := json.Marshal(loginReq)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Read the response body first to debug
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read login response: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("login failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	fmt.Printf("🔍 Login response: %s\n", string(body))
+
+	// Try to parse as the expected format first
+	var loginResp UbiquityLoginResponse
+	if err := json.Unmarshal(body, &loginResp); err == nil && loginResp.Meta.RC == "ok" {
+		// Standard format with meta.rc
+		if len(loginResp.Data) > 0 {
+			config.SessionToken = loginResp.Data[0].XCsrfToken
+		}
+	} else {
+		// Alternative format - direct user profile response
+		var userProfile map[string]interface{}
+		if err := json.Unmarshal(body, &userProfile); err != nil {
+			return fmt.Errorf("failed to parse login response: %v, body: %s", err, string(body))
+		}
+
+		// Check if we have a valid user profile
+		if username, ok := userProfile["username"].(string); ok && username == config.Username {
+			// Login successful
+			fmt.Printf("✅ Login successful for user: %s\n", username)
+			// Use the device token as the session token
+			if deviceToken, ok := userProfile["deviceToken"].(string); ok {
+				config.SessionToken = deviceToken
+				config.LastLoginTime = time.Now().Unix()
+				fmt.Printf("✅ Using device token as session token: %s\n", deviceToken[:20]+"...")
+			}
+		} else {
+			return fmt.Errorf("login failed: invalid user profile, body: %s", string(body))
+		}
+	}
+
+	// Extract CSRF token from response headers (but don't override device token)
+	csrfToken := resp.Header.Get("X-CSRF-Token")
+	if csrfToken != "" {
+		config.CSRFToken = csrfToken
+		fmt.Printf("✅ Extracted CSRF token from headers: %s\n", csrfToken[:20]+"...")
+	} else {
+		fmt.Printf("⚠️ No CSRF token found in headers\n")
+	}
+
+	// Also set the session cookie
+	fmt.Printf("🔍 Available cookies: %d\n", len(resp.Cookies()))
+	for _, cookie := range resp.Cookies() {
+		cookiePreview := cookie.Value
+		if len(cookiePreview) > 20 {
+			cookiePreview = cookiePreview[:20] + "..."
+		}
+		fmt.Printf("🔍 Cookie: %s = %s\n", cookie.Name, cookiePreview)
+		// Ubiquity uses TOKEN cookie instead of unifises
+		if cookie.Name == "TOKEN" || cookie.Name == "unifises" {
+			// Store the session cookie value for future requests
+			config.SessionCookie = cookie.Value
+			fmt.Printf("✅ Extracted session cookie (%s): %s\n", cookie.Name, cookie.Value[:20]+"...")
+		}
+	}
+
+	return nil
+}
