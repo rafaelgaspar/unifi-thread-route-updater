@@ -552,6 +552,11 @@ func isRoutableCIDR(cidr string) bool {
 		return false
 	}
 
+	// fdc0::/7 - Unique Local Addresses (ULA) - should not be routed globally
+	if len(ip) >= 1 && (ip[0]&0xfe) == 0xfc {
+		return false
+	}
+
 	return true
 }
 
@@ -584,15 +589,18 @@ func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route 
 			continue
 		}
 
-		// Create routes to all available Thread Border Routers
+		// Create routes to all available Thread Border Routers (only routable ones)
 		for _, router := range routers {
-			routeKey := fmt.Sprintf("%s->%s", deviceCIDR, router.IPv6Addr.String())
-			route := Route{
-				CIDR:             deviceCIDR,
-				ThreadRouterIPv6: router.IPv6Addr.String(),
-				RouterName:       router.Name,
+			// Only use routers with routable IPv6 addresses
+			if isRoutableCIDR(router.IPv6Addr.String() + "/128") {
+				routeKey := fmt.Sprintf("%s->%s", deviceCIDR, router.IPv6Addr.String())
+				route := Route{
+					CIDR:             deviceCIDR,
+					ThreadRouterIPv6: router.IPv6Addr.String(),
+					RouterName:       router.Name,
+				}
+				routeMap[routeKey] = route
 			}
-			routeMap[routeKey] = route
 		}
 	}
 
@@ -887,12 +895,12 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 
 	// Find routes to add and remove (with grace period consideration)
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
-	
+
 	// Show summary if there are changes or if we have routes being tracked
 	if len(routesToAdd) > 0 || len(routesToRemove) > 0 || len(state.RouteLastSeen) > 0 {
-		fmt.Printf("🔄 Route changes: +%d routes, -%d routes (grace period: %s)\n", 
+		fmt.Printf("🔄 Route changes: +%d routes, -%d routes (grace period: %s)\n",
 			len(routesToAdd), len(routesToRemove), formatDuration(state.UbiquityConfig.RouteGracePeriod))
-		
+
 		// Show grace period status for tracked routes
 		if len(state.RouteLastSeen) > 0 {
 			currentTime := time.Now()
