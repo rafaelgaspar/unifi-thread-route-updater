@@ -1025,66 +1025,61 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, error) {
 	client := createHTTPClient(config)
 
-	// Try multiple endpoints to find the correct one for reading routes
-	// Prioritize the correct endpoint that actually returns routes
-	endpoints := []string{
-		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing", config.APIBaseURL),
-		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL),
-		fmt.Sprintf("%s/api/s/default/rest/routing/static-route", config.APIBaseURL),
+	// Use the correct endpoint for reading routes
+	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing", config.APIBaseURL)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
 	}
 
-	for _, url := range endpoints {
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			continue
-		}
+	// Add session authentication
+	req.Header.Set("Content-Type", "application/json")
 
-		// Add session authentication
-		req.Header.Set("Content-Type", "application/json")
-
-		// Use session cookie as Authorization header
-		if config.SessionCookie != "" {
-			req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-		}
-
-		if config.CSRFToken != "" {
-			req.Header.Set("X-CSRF-Token", config.CSRFToken)
-		}
-
-		if config.SessionCookie != "" {
-			req.AddCookie(&http.Cookie{
-				Name:  "TOKEN",
-				Value: config.SessionCookie,
-			})
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			continue
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-
-		if err != nil {
-			continue
-		}
-
-		if resp.StatusCode == http.StatusOK {
-			var apiResp UbiquityAPIResponse
-			if err := json.Unmarshal(body, &apiResp); err != nil {
-				continue
-			}
-
-			if apiResp.Meta.RC == "ok" {
-				return apiResp.Data, nil
-			}
-		}
+	// Use session cookie as Authorization header
+	if config.SessionCookie != "" {
+		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
 	}
 
-	// If all endpoints failed, return empty array but log the issue
-	fmt.Printf("⚠️ All endpoints failed, returning empty routes array\n")
-	return []UbiquityStaticRoute{}, nil
+	if config.CSRFToken != "" {
+		req.Header.Set("X-CSRF-Token", config.CSRFToken)
+	}
+
+	if config.SessionCookie != "" {
+		req.AddCookie(&http.Cookie{
+			Name:  "TOKEN",
+			Value: config.SessionCookie,
+		})
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+		}
+	}()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp UbiquityAPIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, err
+	}
+
+	if apiResp.Meta.RC != "ok" {
+		return nil, fmt.Errorf("API returned error: %s", apiResp.Meta.RC)
+	}
+
+	return apiResp.Data, nil
 }
 
 // addUbiquityStaticRoute adds a new static route to the router
