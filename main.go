@@ -107,20 +107,22 @@ type DaemonState struct {
 	LastUpdate          time.Time
 	UbiquityConfig      UbiquityConfig
 	AddedRoutes         map[string]bool // Track routes we've added to prevent duplicates
+	RouteLastSeen       map[string]time.Time // Track when each route was last seen
 }
 
 // UbiquityConfig holds configuration for Ubiquity router API
 type UbiquityConfig struct {
-	RouterHostname string
-	Username       string
-	Password       string
-	APIBaseURL     string
-	InsecureSSL    bool
-	Enabled        bool
-	SessionToken   string // Device token for API requests
-	CSRFToken      string // CSRF token for API requests
-	SessionCookie  string // Session cookie for API requests
-	LastLoginTime  int64  // Timestamp of last successful login
+	RouterHostname     string
+	Username           string
+	Password           string
+	APIBaseURL         string
+	InsecureSSL        bool
+	Enabled            bool
+	SessionToken       string // Device token for API requests
+	CSRFToken          string // CSRF token for API requests
+	SessionCookie      string // Session cookie for API requests
+	LastLoginTime      int64  // Timestamp of last successful login
+	RouteGracePeriod   time.Duration // Grace period before removing routes
 }
 
 // UbiquityStaticRoute represents a static route in Ubiquity format
@@ -177,6 +179,7 @@ func main() {
 		LastUpdate:          time.Now(),
 		UbiquityConfig:      getUbiquityConfig(),
 		AddedRoutes:         make(map[string]bool),
+		RouteLastSeen:       make(map[string]time.Time),
 	}
 
 	// Set up signal handling for graceful shutdown
@@ -774,13 +777,25 @@ func getUbiquityConfig() UbiquityConfig {
 
 	enabled := os.Getenv("UBIQUITY_ENABLED") == "true"
 
+	// Parse route grace period from environment variable
+	gracePeriodStr := os.Getenv("ROUTE_GRACE_PERIOD")
+	gracePeriod := 1 * time.Hour // Default: 1 hour
+	if gracePeriodStr != "" {
+		if parsed, err := time.ParseDuration(gracePeriodStr); err == nil {
+			gracePeriod = parsed
+		} else {
+			fmt.Printf("⚠️ Invalid ROUTE_GRACE_PERIOD format '%s', using default 1h\n", gracePeriodStr)
+		}
+	}
+
 	return UbiquityConfig{
-		RouterHostname: routerHostname,
-		Username:       username,
-		Password:       password,
-		APIBaseURL:     fmt.Sprintf("https://%s", routerHostname),
-		InsecureSSL:    os.Getenv("UBIQUITY_INSECURE_SSL") == "true",
-		Enabled:        enabled,
+		RouterHostname:   routerHostname,
+		Username:         username,
+		Password:         password,
+		APIBaseURL:       fmt.Sprintf("https://%s", routerHostname),
+		InsecureSSL:      os.Getenv("UBIQUITY_INSECURE_SSL") == "true",
+		Enabled:          enabled,
+		RouteGracePeriod: gracePeriod,
 	}
 }
 
@@ -847,6 +862,13 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	// Convert our routes to Ubiquity format
 	desiredRoutes := convertToUbiquityRoutes(routes)
 
+	// Update last seen time for current desired routes
+	routeUpdateTime := time.Now()
+	for _, route := range desiredRoutes {
+		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		state.RouteLastSeen[key] = routeUpdateTime
+	}
+
 	// Debug: Print current and desired routes
 	fmt.Printf("🔍 Current routes from API: %d\n", len(currentRoutes))
 	for i, route := range currentRoutes {
@@ -857,9 +879,9 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 	}
 
-	// Find routes to add and remove
-	routesToAdd, routesToRemove := compareRoutes(currentRoutes, desiredRoutes)
-	fmt.Printf("🔍 Routes to add: %d, Routes to remove: %d\n", len(routesToAdd), len(routesToRemove))
+	// Find routes to add and remove (with grace period consideration)
+	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
+	fmt.Printf("🔍 Routes to add: %d, Routes to remove: %d (grace period: %v)\n", len(routesToAdd), len(routesToRemove), state.UbiquityConfig.RouteGracePeriod)
 
 	// Filter out routes we've already added (in-memory tracking)
 	var newRoutesToAdd []UbiquityStaticRoute
@@ -1149,7 +1171,59 @@ func convertToUbiquityRoutes(routes []Route) []UbiquityStaticRoute {
 	return ubiquityRoutes
 }
 
+// compareRoutesWithGracePeriod compares current and desired routes with grace period consideration
+func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeLastSeen map[string]time.Time, gracePeriod time.Duration) ([]UbiquityStaticRoute, []UbiquityStaticRoute) {
+	var toAdd []UbiquityStaticRoute
+	var toRemove []UbiquityStaticRoute
+	currentTime := time.Now()
+
+	// Create a map of desired routes for quick lookup
+	desiredMap := make(map[string]UbiquityStaticRoute)
+	for _, route := range desired {
+		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		desiredMap[key] = route
+	}
+
+	// Find routes to remove (in current but not in desired)
+	for _, currentRoute := range current {
+		key := fmt.Sprintf("%s->%s", currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop)
+		if _, exists := desiredMap[key]; !exists {
+			// Only remove Thread routes (routes with our name pattern)
+			if strings.Contains(currentRoute.Name, "Thread route via") {
+				// Check if we should respect grace period
+				if lastSeen, hasLastSeen := routeLastSeen[key]; hasLastSeen {
+					timeSinceLastSeen := currentTime.Sub(lastSeen)
+					if timeSinceLastSeen < gracePeriod {
+						fmt.Printf("⏳ Route %s -> %s still within grace period (%v remaining), not removing\n", 
+							currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, 
+							gracePeriod-timeSinceLastSeen)
+						continue
+					}
+				}
+				toRemove = append(toRemove, currentRoute)
+			}
+		}
+	}
+
+	// Find routes to add (in desired but not in current)
+	currentMap := make(map[string]bool)
+	for _, route := range current {
+		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		currentMap[key] = true
+	}
+
+	for _, desiredRoute := range desired {
+		key := fmt.Sprintf("%s->%s", desiredRoute.StaticRouteNetwork, desiredRoute.StaticRouteNexthop)
+		if !currentMap[key] {
+			toAdd = append(toAdd, desiredRoute)
+		}
+	}
+
+	return toAdd, toRemove
+}
+
 // compareRoutes compares current and desired routes to find what needs to be added/removed
+// This is the original function kept for backward compatibility
 func compareRoutes(current, desired []UbiquityStaticRoute) ([]UbiquityStaticRoute, []UbiquityStaticRoute) {
 	var toAdd []UbiquityStaticRoute
 	var toRemove []UbiquityStaticRoute
