@@ -885,39 +885,28 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		state.RouteLastSeen[key] = routeUpdateTime
 	}
 
-	// Debug: Print current and desired routes
-	fmt.Printf("🔍 Current routes from API: %d\n", len(currentRoutes))
-	for i, route := range currentRoutes {
-		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
-	}
-	fmt.Printf("🔍 Desired routes: %d\n", len(desiredRoutes))
-	for i, route := range desiredRoutes {
-		fmt.Printf("  [%d] %s -> %s (%s)\n", i, route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
-	}
-
 	// Find routes to add and remove (with grace period consideration)
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
-	fmt.Printf("🔍 Routes to add: %d, Routes to remove: %d (grace period: %v)\n", len(routesToAdd), len(routesToRemove), state.UbiquityConfig.RouteGracePeriod)
+	
+	// Only show summary if there are changes
+	if len(routesToAdd) > 0 || len(routesToRemove) > 0 {
+		fmt.Printf("🔄 Route changes: +%d routes, -%d routes (grace period: %s)\n", 
+			len(routesToAdd), len(routesToRemove), formatDuration(state.UbiquityConfig.RouteGracePeriod))
+	}
 
 	// Filter out routes we've already added (in-memory tracking)
 	var newRoutesToAdd []UbiquityStaticRoute
-	fmt.Printf("🔍 In-memory tracking: %d routes already tracked\n", len(state.AddedRoutes))
 	for _, route := range routesToAdd {
 		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		if !state.AddedRoutes[key] {
 			newRoutesToAdd = append(newRoutesToAdd, route)
 			state.AddedRoutes[key] = true // Mark as added
-			fmt.Printf("🔍 Adding new route to tracking: %s\n", key)
-		} else {
-			fmt.Printf("⏭️  Skipping already added route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		}
 	}
 	routesToAdd = newRoutesToAdd
-	fmt.Printf("🔍 Final routes to add after in-memory filtering: %d\n", len(routesToAdd))
 
 	// Add a small delay after adding routes to allow them to be indexed
 	if len(routesToAdd) > 0 {
-		fmt.Printf("⏳ Adding %d new routes, waiting 2 seconds for indexing...\n", len(routesToAdd))
 		time.Sleep(2 * time.Second)
 	}
 
@@ -956,12 +945,9 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 		fmt.Sprintf("%s/api/s/default/rest/routing/static-route", config.APIBaseURL),
 	}
 
-	for i, url := range endpoints {
-		fmt.Printf("🔍 Trying endpoint %d: %s\n", i+1, url)
-
+	for _, url := range endpoints {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			fmt.Printf("❌ Failed to create request: %v\n", err)
 			continue
 		}
 
@@ -976,7 +962,7 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 		if config.CSRFToken != "" {
 			req.Header.Set("X-CSRF-Token", config.CSRFToken)
 		}
-
+		
 		if config.SessionCookie != "" {
 			req.AddCookie(&http.Cookie{
 				Name:  "TOKEN",
@@ -986,35 +972,25 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 
 		resp, err := client.Do(req)
 		if err != nil {
-			fmt.Printf("❌ Request failed: %v\n", err)
 			continue
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-
+		
 		if err != nil {
-			fmt.Printf("❌ Failed to read response: %v\n", err)
 			continue
 		}
-
-		fmt.Printf("🔍 Response status: %d, body: %s\n", resp.StatusCode, string(body))
 
 		if resp.StatusCode == http.StatusOK {
 			var apiResp UbiquityAPIResponse
 			if err := json.Unmarshal(body, &apiResp); err != nil {
-				fmt.Printf("❌ Failed to parse JSON: %v\n", err)
 				continue
 			}
 
 			if apiResp.Meta.RC == "ok" {
-				fmt.Printf("✅ Successfully retrieved %d routes from endpoint %d\n", len(apiResp.Data), i+1)
 				return apiResp.Data, nil
-			} else {
-				fmt.Printf("❌ API returned error: %s\n", apiResp.Meta.RC)
 			}
-		} else {
-			fmt.Printf("❌ HTTP error: %d\n", resp.StatusCode)
 		}
 	}
 
@@ -1029,23 +1005,11 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 
 	// Try the UDM Pro/UCG Max endpoint first
 	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL)
-	fmt.Printf("🔍 Trying UDM Pro endpoint: %s\n", url)
-
-	// First, let's see what the current routes look like to understand the expected format
-	fmt.Printf("🔍 Getting current routes to understand the expected format...\n")
-	currentRoutes, err := getUbiquityStaticRoutes(config)
-	if err != nil {
-		fmt.Printf("⚠️ Could not get current routes for format reference: %v\n", err)
-	} else {
-		fmt.Printf("🔍 Current routes format: %+v\n", currentRoutes)
-	}
 
 	jsonData, err := json.Marshal(route)
 	if err != nil {
 		return err
 	}
-
-	fmt.Printf("🔍 Sending JSON data: %s\n", string(jsonData))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -1058,22 +1022,17 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 	// Use session cookie as Authorization header
 	if config.SessionCookie != "" {
 		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-		logDebug("Added Authorization header with session cookie: %s", config.SessionCookie[:20]+"...")
 	}
 
 	if config.CSRFToken != "" {
 		// Use CSRF token in X-CSRF-Token header
 		req.Header.Set("X-CSRF-Token", config.CSRFToken)
-		logDebug("Added CSRF token header: %s", config.CSRFToken[:20]+"...")
 	}
 	if config.SessionCookie != "" {
 		req.AddCookie(&http.Cookie{
 			Name:  "TOKEN",
 			Value: config.SessionCookie,
 		})
-		fmt.Printf("🔍 Added session cookie (TOKEN) to request: %s\n", config.SessionCookie[:20]+"...")
-	} else {
-		fmt.Printf("⚠️ No session cookie available for request\n")
 	}
 
 	resp, err := client.Do(req)
@@ -1100,7 +1059,6 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 
 	// Try the UDM Pro endpoint first (same as the working read endpoint)
 	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
-	fmt.Printf("🔍 Trying UDM Pro endpoint: %s\n", url)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
@@ -1112,22 +1070,17 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	// Use session cookie as Authorization header
 	if config.SessionCookie != "" {
 		req.Header.Set("Authorization", "Bearer "+config.SessionCookie)
-		logDebug("Added Authorization header with session cookie: %s", config.SessionCookie[:20]+"...")
 	}
 
 	if config.CSRFToken != "" {
 		// Use CSRF token in X-CSRF-Token header
 		req.Header.Set("X-CSRF-Token", config.CSRFToken)
-		logDebug("Added CSRF token header: %s", config.CSRFToken[:20]+"...")
 	}
 	if config.SessionCookie != "" {
 		req.AddCookie(&http.Cookie{
 			Name:  "TOKEN",
 			Value: config.SessionCookie,
 		})
-		fmt.Printf("🔍 Added session cookie (TOKEN) to request: %s\n", config.SessionCookie[:20]+"...")
-	} else {
-		fmt.Printf("⚠️ No session cookie available for request\n")
 	}
 
 	resp, err := client.Do(req)
@@ -1212,14 +1165,14 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 					if timeSinceLastSeen < gracePeriod {
 						remaining := gracePeriod - timeSinceLastSeen
 						remainingStr := formatDuration(remaining)
-						fmt.Printf("⏳ Route %s -> %s still within grace period (%s remaining), not removing\n", 
+						fmt.Printf("⏳ Route %s -> %s still within grace period (%s remaining), not removing\n",
 							currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, remainingStr)
 						continue
 					}
 				} else {
 					// Route was never seen before - treat as if it was just seen to give it grace period
 					gracePeriodStr := formatDuration(gracePeriod)
-					fmt.Printf("⏳ Route %s -> %s never seen before, giving grace period (%s), not removing\n", 
+					fmt.Printf("⏳ Route %s -> %s never seen before, giving grace period (%s), not removing\n",
 						currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, gracePeriodStr)
 					// Mark it as seen now so it gets the full grace period
 					routeLastSeen[key] = currentTime
@@ -1294,7 +1247,6 @@ func loginToUbiquity(config *UbiquityConfig) error {
 
 	// Login endpoint
 	url := fmt.Sprintf("%s/api/auth/login", config.APIBaseURL)
-	fmt.Printf("🔍 Attempting login to: %s\n", url)
 
 	loginReq := UbiquityLoginRequest{
 		Username: config.Username,
@@ -1333,7 +1285,6 @@ func loginToUbiquity(config *UbiquityConfig) error {
 		return fmt.Errorf("login failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Printf("🔍 Login response: %s\n", string(body))
 
 	// Try to parse as the expected format first
 	var loginResp UbiquityLoginResponse
@@ -1352,12 +1303,10 @@ func loginToUbiquity(config *UbiquityConfig) error {
 		// Check if we have a valid user profile
 		if username, ok := userProfile["username"].(string); ok && username == config.Username {
 			// Login successful
-			fmt.Printf("✅ Login successful for user: %s\n", username)
 			// Use the device token as the session token
 			if deviceToken, ok := userProfile["deviceToken"].(string); ok {
 				config.SessionToken = deviceToken
 				config.LastLoginTime = time.Now().Unix()
-				fmt.Printf("✅ Using device token as session token: %s\n", deviceToken[:20]+"...")
 			}
 		} else {
 			return fmt.Errorf("login failed: invalid user profile, body: %s", string(body))
@@ -1368,24 +1317,14 @@ func loginToUbiquity(config *UbiquityConfig) error {
 	csrfToken := resp.Header.Get("X-CSRF-Token")
 	if csrfToken != "" {
 		config.CSRFToken = csrfToken
-		fmt.Printf("✅ Extracted CSRF token from headers: %s\n", csrfToken[:20]+"...")
-	} else {
-		fmt.Printf("⚠️ No CSRF token found in headers\n")
 	}
 
 	// Also set the session cookie
-	fmt.Printf("🔍 Available cookies: %d\n", len(resp.Cookies()))
 	for _, cookie := range resp.Cookies() {
-		cookiePreview := cookie.Value
-		if len(cookiePreview) > 20 {
-			cookiePreview = cookiePreview[:20] + "..."
-		}
-		fmt.Printf("🔍 Cookie: %s = %s\n", cookie.Name, cookiePreview)
 		// Ubiquity uses TOKEN cookie instead of unifises
 		if cookie.Name == "TOKEN" || cookie.Name == "unifises" {
 			// Store the session cookie value for future requests
 			config.SessionCookie = cookie.Value
-			fmt.Printf("✅ Extracted session cookie (%s): %s\n", cookie.Name, cookie.Value[:20]+"...")
 		}
 	}
 
