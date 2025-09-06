@@ -911,15 +911,16 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 	client := createHTTPClient(config)
 
 	// Try multiple endpoints to find the correct one for reading routes
+	// Prioritize the correct endpoint that actually returns routes
 	endpoints := []string{
+		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing", config.APIBaseURL),
 		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL),
 		fmt.Sprintf("%s/api/s/default/rest/routing/static-route", config.APIBaseURL),
-		fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing", config.APIBaseURL),
 	}
 
 	for i, url := range endpoints {
 		fmt.Printf("🔍 Trying endpoint %d: %s\n", i+1, url)
-		
+
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			fmt.Printf("❌ Failed to create request: %v\n", err)
@@ -937,7 +938,7 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 		if config.CSRFToken != "" {
 			req.Header.Set("X-CSRF-Token", config.CSRFToken)
 		}
-		
+
 		if config.SessionCookie != "" {
 			req.AddCookie(&http.Cookie{
 				Name:  "TOKEN",
@@ -953,7 +954,7 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		
+
 		if err != nil {
 			fmt.Printf("❌ Failed to read response: %v\n", err)
 			continue
