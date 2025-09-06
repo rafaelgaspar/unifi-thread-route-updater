@@ -859,12 +859,12 @@ func getUbiquityConfig() UbiquityConfig {
 
 	// Parse route grace period from environment variable
 	gracePeriodStr := os.Getenv("ROUTE_GRACE_PERIOD")
-	gracePeriod := 1 * time.Hour // Default: 1 hour
+	gracePeriod := 10 * time.Minute // Default: 10 minutes
 	if gracePeriodStr != "" {
 		if parsed, err := time.ParseDuration(gracePeriodStr); err == nil {
 			gracePeriod = parsed
 		} else {
-			fmt.Printf("⚠️ Invalid ROUTE_GRACE_PERIOD format '%s', using default 1h\n", gracePeriodStr)
+			fmt.Printf("⚠️ Invalid ROUTE_GRACE_PERIOD format '%s', using default 10m\n", gracePeriodStr)
 		}
 	}
 
@@ -989,7 +989,7 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 
 	// Remove old routes
 	for _, route := range routesToRemove {
-		fmt.Printf("🗑️  Attempting to delete route: %s -> %s (ID: %s)\n", 
+		fmt.Printf("🗑️  Attempting to delete route: %s -> %s (ID: %s)\n",
 			route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
 		if err := deleteUbiquityStaticRoute(state.UbiquityConfig, route.ID); err != nil {
 			fmt.Printf("❌ Failed to delete route %s (ID: %s): %v\n", route.StaticRouteNetwork, route.ID, err)
@@ -1147,7 +1147,7 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 
 	// Try the UDM Pro endpoint first (same as the working read endpoint)
 	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
-	
+
 	// Debug: Log the delete attempt
 	fmt.Printf("🔍 DELETE request to: %s\n", url)
 	req, err := http.NewRequest("DELETE", url, nil)

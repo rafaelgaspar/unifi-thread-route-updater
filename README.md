@@ -103,7 +103,7 @@ go build -o thread-route-updater .
 | `UBIQUITY_ROUTER_PASSWORD` | Ubiquiti router password | Required |
 | `UBIQUITY_ROUTER_ENABLED` | Enable Ubiquiti integration | `true` |
 | `UBIQUITY_ROUTER_INSECURE_SSL` | Skip SSL verification | `false` |
-| `ROUTE_GRACE_PERIOD` | Grace period before removing routes (e.g., `1h`, `30m`, `2h30m`) | `1h` |
+| `ROUTE_GRACE_PERIOD` | Grace period before removing routes (e.g., `10m`, `30m`, `1h`) | `10m` |
 
 ## 🏗️ Deployment
 
@@ -235,14 +235,15 @@ The daemon provides a real-time dashboard that updates every 5 seconds, showing:
 
 To prevent unnecessary route churn when mDNS announcements are infrequent, the application implements a configurable grace period:
 
-- **Default**: 1 hour (`ROUTE_GRACE_PERIOD=1h`)
+- **Default**: 10 minutes (`ROUTE_GRACE_PERIOD=10m`)
 - **Behavior**: Routes are only removed after being absent for the full grace period
 - **Benefits**: Prevents temporary route deletion when devices briefly go offline
 - **Configurable**: Set via `ROUTE_GRACE_PERIOD` environment variable (e.g., `30m`, `2h`, `1h30m`)
 
 Example scenarios:
+
 - Device goes offline for 5 minutes → Route kept (within grace period)
-- Device goes offline for 2 hours → Route removed (exceeds grace period)
+- Device goes offline for 15 minutes → Route removed (exceeds grace period)
 - Device comes back online → Route immediately restored
 
 ## Output Format
