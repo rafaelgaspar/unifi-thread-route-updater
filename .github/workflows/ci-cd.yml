@@ -165,12 +165,6 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Debug image reference
-      run: |
-        echo "Repository: ${{ github.repository }}"
-        echo "Image ref: ${{ env.REGISTRY }}/${{ github.repository }}:latest"
-        echo "Registry: ${{ env.REGISTRY }}"
-
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
