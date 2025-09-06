@@ -87,7 +87,7 @@ func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
 
 		err := resolver.Browse(ctx, "_matter._tcp", "local.", entries)
 		if err != nil {
-			fmt.Printf("❌ Failed to browse for Matter devices: %v\n", err)
+			logError("Failed to browse for Matter devices: %v", err)
 		}
 	}()
 
@@ -116,12 +116,14 @@ func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
 				if existingDevice.Name == device.Name && existingDevice.IPv6Addr.Equal(device.IPv6Addr) {
 					state.MatterDevices[i] = device
 					found = true
+					logDebug("Updated existing Matter device: %s (%s)", device.Name, device.IPv6Addr.String())
 					break
 				}
 			}
 
 			if !found {
 				state.MatterDevices = append(state.MatterDevices, device)
+				logInfo("Discovered new Matter device: %s (%s)", device.Name, device.IPv6Addr.String())
 			}
 		}
 
@@ -156,7 +158,7 @@ func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 
 		err := resolver.Browse(ctx, "_meshcop._udp", "local.", entries)
 		if err != nil {
-			fmt.Printf("❌ Failed to browse for Thread Border Routers: %v\n", err)
+			logError("Failed to browse for Thread Border Routers: %v", err)
 		}
 	}()
 
@@ -185,12 +187,14 @@ func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 				if existingRouter.Name == router.Name && existingRouter.IPv6Addr.Equal(router.IPv6Addr) {
 					state.ThreadBorderRouters[i] = router
 					found = true
+					logDebug("Updated existing Thread Border Router: %s (%s)", router.Name, router.IPv6Addr.String())
 					break
 				}
 			}
 
 			if !found {
 				state.ThreadBorderRouters = append(state.ThreadBorderRouters, router)
+				logInfo("Discovered new Thread Border Router: %s (%s) - CIDR: %s", router.Name, router.IPv6Addr.String(), router.CIDR)
 			}
 		}
 
@@ -208,17 +212,23 @@ func periodicRefresh(state *DaemonState, done <-chan struct{}) {
 		case <-ticker.C:
 			// Gentle refresh - only if we haven't seen updates in a while
 			if time.Since(state.LastUpdate) > 2*time.Minute {
-				fmt.Println("🔄 Performing gentle refresh...")
+				logInfo("Performing gentle refresh (no updates for %v)", time.Since(state.LastUpdate))
 
 				// Quick discovery without overwhelming the network
 				devices, err := discoverMatterDevices()
 				if err == nil && len(devices) > 0 {
 					state.MatterDevices = devices
+					logDebug("Gentle refresh discovered %d Matter devices", len(devices))
+				} else if err != nil {
+					logWarn("Gentle refresh failed for Matter devices: %v", err)
 				}
 
 				routers, err := discoverThreadBorderRouters()
 				if err == nil && len(routers) > 0 {
 					state.ThreadBorderRouters = routers
+					logDebug("Gentle refresh discovered %d Thread Border Routers", len(routers))
+				} else if err != nil {
+					logWarn("Gentle refresh failed for Thread Border Routers: %v", err)
 				}
 
 				state.LastUpdate = time.Now()

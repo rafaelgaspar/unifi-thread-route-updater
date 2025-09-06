@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -41,8 +40,8 @@ func main() {
 	// Periodic refresh every 5 minutes to catch devices that might have been missed
 	go periodicRefresh(state, done)
 
-	// Display loop
-	ticker := time.NewTicker(5 * time.Second)
+	// Status reporting loop (less frequent for daemon mode)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -50,7 +49,7 @@ func main() {
 		case <-ticker.C:
 			displayCurrentState(state)
 		case sig := <-sigChan:
-			fmt.Printf("\n🛑 Received signal %v, shutting down gracefully...\n", sig)
+			logInfo("Received signal %v, shutting down gracefully...", sig)
 			close(done)
 			return
 		}

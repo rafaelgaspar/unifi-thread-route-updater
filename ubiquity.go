@@ -17,7 +17,7 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		return
 	}
 
-	fmt.Println("🔄 Updating Ubiquity router static routes...")
+	logInfo("Updating Ubiquity router static routes...")
 
 	// Check if we have valid session tokens and they're not too old
 	// Only re-authenticate if we don't have tokens or they're expired
@@ -25,17 +25,17 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	timeSinceLastLogin := currentTime - state.UbiquityConfig.LastLoginTime
 
 	if state.UbiquityConfig.SessionCookie == "" || state.UbiquityConfig.CSRFToken == "" {
-		fmt.Println("🔐 No valid session tokens, authenticating...")
+		logInfo("No valid session tokens, authenticating...")
 		err := loginToUbiquity(&state.UbiquityConfig)
 		if err != nil {
-			fmt.Printf("❌ Failed to login to Ubiquity router: %v\n", err)
+			logError("Failed to login to Ubiquity router: %v", err)
 			return
 		}
 	} else if timeSinceLastLogin > 300 { // 5 minutes
-		fmt.Printf("🔐 Session tokens expired (%d seconds old), re-authenticating...\n", timeSinceLastLogin)
+		logInfo("Session tokens expired (%d seconds old), re-authenticating...", timeSinceLastLogin)
 		err := loginToUbiquity(&state.UbiquityConfig)
 		if err != nil {
-			fmt.Printf("❌ Failed to login to Ubiquity router: %v\n", err)
+			logError("Failed to login to Ubiquity router: %v", err)
 			return
 		}
 	} else {
@@ -45,10 +45,10 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	// Get current routes from router
 	currentRoutes, err := getUbiquityStaticRoutes(state.UbiquityConfig)
 	if err != nil {
-		fmt.Printf("❌ Failed to get current routes: %v\n", err)
+		logError("Failed to get current routes: %v", err)
 		// If we get a rate limit error, don't try to re-login immediately
 		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "AUTHENTICATION_FAILED_LIMIT_REACHED") {
-			fmt.Println("⚠️ Rate limit reached, skipping this update cycle...")
+			logWarn("Rate limit reached, skipping this update cycle...")
 			// Clear all session tokens to force fresh login next time
 			state.UbiquityConfig.SessionToken = ""
 			state.UbiquityConfig.SessionCookie = ""
@@ -61,12 +61,12 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		state.UbiquityConfig.CSRFToken = ""
 		err = loginToUbiquity(&state.UbiquityConfig)
 		if err != nil {
-			fmt.Printf("❌ Failed to re-login to Ubiquity router: %v\n", err)
+			logError("Failed to re-login to Ubiquity router: %v", err)
 			return
 		}
 		currentRoutes, err = getUbiquityStaticRoutes(state.UbiquityConfig)
 		if err != nil {
-			fmt.Printf("❌ Failed to get current routes after re-login: %v\n", err)
+			logError("Failed to get current routes after re-login: %v", err)
 			return
 		}
 	}
@@ -86,7 +86,7 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 
 	// Show summary if there are changes or if we have routes being tracked
 	if len(routesToAdd) > 0 || len(routesToRemove) > 0 || len(state.RouteLastSeen) > 0 {
-		fmt.Printf("🔄 Route changes: +%d routes, -%d routes (grace period: %s)\n",
+		logInfo("Route changes: +%d routes, -%d routes (grace period: %s)",
 			len(routesToAdd), len(routesToRemove), formatDuration(state.UbiquityConfig.RouteGracePeriod))
 
 		// Show grace period status for tracked routes
@@ -97,7 +97,7 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 				if timeSinceLastSeen < state.UbiquityConfig.RouteGracePeriod {
 					remaining := state.UbiquityConfig.RouteGracePeriod - timeSinceLastSeen
 					remainingStr := formatDuration(remaining)
-					fmt.Printf("⏳ Route %s still within grace period (%s remaining)\n", key, remainingStr)
+					logDebug("Route %s still within grace period (%s remaining)", key, remainingStr)
 				}
 			}
 		}
@@ -121,35 +121,35 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 
 	// Remove old routes
 	for _, route := range routesToRemove {
-		fmt.Printf("🗑️  Attempting to delete route: %s -> %s (ID: %s)\n",
+		logInfo("Attempting to delete route: %s -> %s (ID: %s)",
 			route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
 		if err := deleteUbiquityStaticRoute(state.UbiquityConfig, route.ID); err != nil {
-			fmt.Printf("❌ Failed to delete route %s (ID: %s): %v\n", route.StaticRouteNetwork, route.ID, err)
+			logError("Failed to delete route %s (ID: %s): %v", route.StaticRouteNetwork, route.ID, err)
 			// If the route ID is invalid, it might have been manually deleted
 			// Remove it from our tracking to prevent repeated attempts
 			if strings.Contains(err.Error(), "IdInvalid") {
-				fmt.Printf("⚠️  Route ID invalid, likely already deleted. Removing from tracking.\n")
+				logWarn("Route ID invalid, likely already deleted. Removing from tracking.")
 				// Remove from in-memory tracking
 				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
 				delete(state.RouteLastSeen, key)
 				delete(state.AddedRoutes, key)
 			}
 		} else {
-			fmt.Printf("✅ Deleted route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
+			logInfo("Successfully deleted route: %s -> %s", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		}
 	}
 
 	// Add new routes
 	for _, route := range routesToAdd {
 		if err := addUbiquityStaticRoute(state.UbiquityConfig, route); err != nil {
-			fmt.Printf("❌ Failed to add route %s: %v\n", route.StaticRouteNetwork, err)
+			logError("Failed to add route %s: %v", route.StaticRouteNetwork, err)
 		} else {
-			fmt.Printf("✅ Added route: %s -> %s (%s)\n", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+			logInfo("Successfully added route: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 		}
 	}
 
 	if len(routesToAdd) == 0 && len(routesToRemove) == 0 {
-		fmt.Println("✅ Ubiquity routes are up to date")
+		logDebug("Ubiquity routes are up to date")
 	}
 }
 
