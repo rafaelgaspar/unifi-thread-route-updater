@@ -490,6 +490,22 @@ func extractRouterName(fqdn string) string {
 	return fqdn
 }
 
+// formatDuration formats a duration to a human-readable string (e.g., "1h30m", "45m", "30s")
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.0fs", d.Seconds())
+	} else if d < time.Hour {
+		return fmt.Sprintf("%.0fm", d.Minutes())
+	} else {
+		hours := int(d.Hours())
+		minutes := int(d.Minutes()) % 60
+		if minutes == 0 {
+			return fmt.Sprintf("%dh", hours)
+		}
+		return fmt.Sprintf("%dh%dm", hours, minutes)
+	}
+}
+
 // isRoutableCIDR checks if a CIDR block is routable (not link-local, loopback, etc.)
 func isRoutableCIDR(cidr string) bool {
 	// Parse the CIDR to get the network
@@ -1194,15 +1210,17 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 				if lastSeen, hasLastSeen := routeLastSeen[key]; hasLastSeen {
 					timeSinceLastSeen := currentTime.Sub(lastSeen)
 					if timeSinceLastSeen < gracePeriod {
-						fmt.Printf("⏳ Route %s -> %s still within grace period (%v remaining), not removing\n", 
-							currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, 
-							gracePeriod-timeSinceLastSeen)
+						remaining := gracePeriod - timeSinceLastSeen
+						remainingStr := formatDuration(remaining)
+						fmt.Printf("⏳ Route %s -> %s still within grace period (%s remaining), not removing\n", 
+							currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, remainingStr)
 						continue
 					}
 				} else {
 					// Route was never seen before - treat as if it was just seen to give it grace period
-					fmt.Printf("⏳ Route %s -> %s never seen before, giving grace period (%v), not removing\n", 
-						currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, gracePeriod)
+					gracePeriodStr := formatDuration(gracePeriod)
+					fmt.Printf("⏳ Route %s -> %s never seen before, giving grace period (%s), not removing\n", 
+						currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, gracePeriodStr)
 					// Mark it as seen now so it gets the full grace period
 					routeLastSeen[key] = currentTime
 					continue
