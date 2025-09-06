@@ -89,18 +89,7 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		logInfo("Route changes: +%d routes, -%d routes (grace period: %s)",
 			len(routesToAdd), len(routesToRemove), formatDuration(state.UbiquityConfig.RouteGracePeriod))
 
-		// Show grace period status for tracked routes
-		if len(state.RouteLastSeen) > 0 {
-			currentTime := time.Now()
-			for key, lastSeen := range state.RouteLastSeen {
-				timeSinceLastSeen := currentTime.Sub(lastSeen)
-				if timeSinceLastSeen < state.UbiquityConfig.RouteGracePeriod {
-					remaining := state.UbiquityConfig.RouteGracePeriod - timeSinceLastSeen
-					remainingStr := formatDuration(remaining)
-					logDebug("Route %s still within grace period (%s remaining)", key, remainingStr)
-				}
-			}
-		}
+		// Grace period status is tracked but not logged unless there are issues
 	}
 
 	// Filter out routes we've already added (in-memory tracking)
@@ -376,10 +365,7 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 				if lastSeen, hasLastSeen := routeLastSeen[key]; hasLastSeen {
 					timeSinceLastSeen := currentTime.Sub(lastSeen)
 					if timeSinceLastSeen < gracePeriod {
-						remaining := gracePeriod - timeSinceLastSeen
-						remainingStr := formatDuration(remaining)
-						logDebug("Route %s -> %s still within grace period (%s remaining), not removing",
-							currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, remainingStr)
+						// Route is still within grace period, keep it
 						continue
 					}
 				} else {
