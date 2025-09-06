@@ -189,7 +189,7 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+			logWarn("Failed to close response body: %v", closeErr)
 		}
 	}()
 
@@ -256,7 +256,7 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+			logWarn("Failed to close response body: %v", closeErr)
 		}
 	}()
 
@@ -302,7 +302,7 @@ func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+			logWarn("Failed to close response body: %v", closeErr)
 		}
 	}()
 
@@ -378,14 +378,14 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 					if timeSinceLastSeen < gracePeriod {
 						remaining := gracePeriod - timeSinceLastSeen
 						remainingStr := formatDuration(remaining)
-						fmt.Printf("⏳ Route %s -> %s still within grace period (%s remaining), not removing\n",
+						logDebug("Route %s -> %s still within grace period (%s remaining), not removing",
 							currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, remainingStr)
 						continue
 					}
 				} else {
 					// Route was never seen before - treat as if it was just seen to give it grace period
 					gracePeriodStr := formatDuration(gracePeriod)
-					fmt.Printf("⏳ Route %s -> %s never seen before, giving grace period (%s), not removing\n",
+					logDebug("Route %s -> %s never seen before, giving grace period (%s), not removing",
 						currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, gracePeriodStr)
 					// Mark it as seen now so it gets the full grace period
 					routeLastSeen[key] = currentTime
@@ -484,7 +484,7 @@ func loginToUbiquity(config *UbiquityConfig) error {
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			fmt.Printf("⚠️ Warning: failed to close response body: %v\n", closeErr)
+			logWarn("Failed to close response body: %v", closeErr)
 		}
 	}()
 

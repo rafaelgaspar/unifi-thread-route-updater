@@ -33,7 +33,7 @@ func getUbiquityConfig() UbiquityConfig {
 		if parsed, err := time.ParseDuration(gracePeriodStr); err == nil {
 			gracePeriod = parsed
 		} else {
-			fmt.Printf("⚠️ Invalid ROUTE_GRACE_PERIOD format '%s', using default 10m\n", gracePeriodStr)
+			logWarn("Invalid ROUTE_GRACE_PERIOD format '%s', using default 10m", gracePeriodStr)
 		}
 	}
 

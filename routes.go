@@ -64,7 +64,7 @@ func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route 
 func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
 	resolver, err := zeroconf.NewResolver(nil)
 	if err != nil {
-		fmt.Printf("❌ Failed to initialize resolver for Matter devices: %v\n", err)
+		logError("Failed to initialize resolver for Matter devices: %v", err)
 		return
 	}
 
@@ -135,7 +135,7 @@ func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
 func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	resolver, err := zeroconf.NewResolver(nil)
 	if err != nil {
-		fmt.Printf("❌ Failed to initialize resolver for Thread Border Routers: %v\n", err)
+		logError("Failed to initialize resolver for Thread Border Routers: %v", err)
 		return
 	}
 
