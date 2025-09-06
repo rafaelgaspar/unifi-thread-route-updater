@@ -123,7 +123,7 @@ func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
 
 			if !found {
 				state.MatterDevices = append(state.MatterDevices, device)
-				logInfo("Discovered new Matter device: %s (%s)", device.Name, device.IPv6Addr.String())
+				logDebug("Discovered new Matter device: %s (%s)", device.Name, device.IPv6Addr.String())
 			}
 		}
 
@@ -194,7 +194,7 @@ func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 
 			if !found {
 				state.ThreadBorderRouters = append(state.ThreadBorderRouters, router)
-				logInfo("Discovered new Thread Border Router: %s (%s) - CIDR: %s", router.Name, router.IPv6Addr.String(), router.CIDR)
+				logDebug("Discovered new Thread Border Router: %s (%s) - CIDR: %s", router.Name, router.IPv6Addr.String(), router.CIDR)
 			}
 		}
 
