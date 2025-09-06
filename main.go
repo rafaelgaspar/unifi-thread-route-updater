@@ -996,16 +996,24 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		time.Sleep(2 * time.Second)
 	}
 
-	// Skip route deletion due to Ubiquiti API issues
-	// The Ubiquiti API deletion endpoints are not working properly (returns 500/400 errors)
-	// Routes will need to be cleaned up manually if they become a problem
-	if len(routesToRemove) > 0 {
-		fmt.Printf("⚠️  Skipping deletion of %d old routes due to Ubiquiti API issues\n", len(routesToRemove))
-		fmt.Printf("   Routes to remove: %d (manual cleanup may be required)\n", len(routesToRemove))
-		for _, route := range routesToRemove {
-			fmt.Printf("   - %s -> %s (ID: %s)\n", route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
+	// Remove old routes
+	for _, route := range routesToRemove {
+		fmt.Printf("🗑️  Attempting to delete route: %s -> %s (ID: %s)\n",
+			route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
+		if err := deleteUbiquityStaticRoute(state.UbiquityConfig, route.ID); err != nil {
+			fmt.Printf("❌ Failed to delete route %s (ID: %s): %v\n", route.StaticRouteNetwork, route.ID, err)
+			// If the route ID is invalid, it might have been manually deleted
+			// Remove it from our tracking to prevent repeated attempts
+			if strings.Contains(err.Error(), "IdInvalid") {
+				fmt.Printf("⚠️  Route ID invalid, likely already deleted. Removing from tracking.\n")
+				// Remove from in-memory tracking
+				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+				delete(state.RouteLastSeen, key)
+				delete(state.AddedRoutes, key)
+			}
+		} else {
+			fmt.Printf("✅ Deleted route: %s -> %s\n", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		}
-		fmt.Printf("   Note: Old routes can be manually deleted from the Ubiquiti web interface if needed\n")
 	}
 
 	// Add new routes
@@ -1146,46 +1154,9 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 func deleteUbiquityStaticRoute(config UbiquityConfig, routeID string) error {
 	client := createHTTPClient(config)
 
-	// First, get all current routes to find the correct ID
-	currentRoutes, err := getUbiquityStaticRoutes(config)
-	if err != nil {
-		return fmt.Errorf("failed to get current routes for deletion: %v", err)
-	}
-
-	// Find the route by matching the routeID (which should be the actual ID from the API)
-	var routeToDelete *UbiquityStaticRoute
-	for _, currentRoute := range currentRoutes {
-		if currentRoute.ID == routeID {
-			routeToDelete = &currentRoute
-			break
-		}
-	}
-
-	if routeToDelete == nil {
-		return fmt.Errorf("route with ID %s not found for deletion", routeID)
-	}
-
-	// Try using a bulk delete endpoint instead of individual route deletion
-	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL)
-
-	// Debug: Log the delete attempt
-	fmt.Printf("🔍 BULK DELETE request to: %s (route: %s -> %s, ID: %s)\n", url, routeToDelete.StaticRouteNetwork, routeToDelete.StaticRouteNexthop, routeToDelete.ID)
-
-	// Add a small delay to ensure the route is fully indexed
-	time.Sleep(100 * time.Millisecond)
-
-	// Try using POST with delete action for bulk deletion
-	deletePayload := map[string]interface{}{
-		"cmd": "delete",
-		"ids": []string{routeToDelete.ID},
-	}
-
-	jsonData, err := json.Marshal(deletePayload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal delete payload: %v", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	// Try the UDM Pro endpoint first (same as the working read endpoint)
+	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route/%s", config.APIBaseURL, routeID)
+	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
 	}
@@ -1315,7 +1286,7 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 					routeLastSeen[key] = currentTime
 					continue
 				}
-				logDebug("🗑️ Marking route for removal: %s -> %s (ID: %s)", 
+				logDebug("🗑️ Marking route for removal: %s -> %s (ID: %s)",
 					currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop, currentRoute.ID)
 				toRemove = append(toRemove, currentRoute)
 			}
