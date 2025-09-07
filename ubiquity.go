@@ -86,8 +86,8 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 
 	// Show summary if there are changes or if we have routes being tracked
 	if len(routesToAdd) > 0 || len(routesToRemove) > 0 || len(state.RouteLastSeen) > 0 {
-		logInfo("Route changes: +%d routes, -%d routes (grace period: %s)",
-			len(routesToAdd), len(routesToRemove), formatDuration(state.UbiquityConfig.RouteGracePeriod))
+		logInfo("Route changes: +%d routes, -%d routes",
+			len(routesToAdd), len(routesToRemove))
 
 		// Grace period status is tracked but not logged unless there are issues
 	}
