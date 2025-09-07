@@ -12,11 +12,14 @@ func monitorMatterDevices(state *DaemonState, done <-chan struct{}) {
 	devices, err := discoverMatterDevices()
 	if err != nil {
 		logError("Error discovering Matter devices: %v", err)
-	} else {
-		state.MatterDevices = devices
+	} else if len(devices) > 0 {
+		// Merge initial discovery with existing devices (don't replace)
+		mergeDevices(state, devices)
 		state.LastUpdate = time.Now()
 		logInfo("Initial Matter device discovery completed: %d devices found", len(devices))
 		logDebug("Matter devices discovered: %+v", devices)
+	} else {
+		logInfo("Initial Matter device discovery completed: 0 devices found")
 	}
 
 	// Then just listen for announcements (passive monitoring)
@@ -29,11 +32,14 @@ func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	routers, err := discoverThreadBorderRouters()
 	if err != nil {
 		logError("Error discovering Thread Border Routers: %v", err)
-	} else {
-		state.ThreadBorderRouters = routers
+	} else if len(routers) > 0 {
+		// Merge initial discovery with existing routers (don't replace)
+		mergeRouters(state, routers)
 		state.LastUpdate = time.Now()
 		logInfo("Initial Thread Border Router discovery completed: %d routers found", len(routers))
 		logDebug("Thread Border Routers discovered: %+v", routers)
+	} else {
+		logInfo("Initial Thread Border Router discovery completed: 0 routers found")
 	}
 
 	// Then just listen for announcements (passive monitoring)

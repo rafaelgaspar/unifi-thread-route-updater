@@ -17,7 +17,7 @@ func main() {
 
 	// Get configuration
 	config := getUbiquityConfig()
-	
+
 	// Create initial state
 	state := &DaemonState{
 		MatterDevices:       []DeviceInfo{},
