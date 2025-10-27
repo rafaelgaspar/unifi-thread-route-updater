@@ -114,7 +114,7 @@ jobs:
         helm repo index ./packages --url https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
 
     - name: Upload Helm chart packages
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: helm-chart-packages
         path: ./packages/
