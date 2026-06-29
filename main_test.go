@@ -7,18 +7,18 @@ import (
 
 func TestDaemonStateInit(t *testing.T) {
 	state := &DaemonState{
-		MatterDevices:       []DeviceInfo{},
 		ThreadBorderRouters: []ThreadBorderRouter{},
+		ThreadMeshPrefixes:  make(map[string]time.Time),
 		UbiquityConfig:      getUbiquityConfig(),
 		AddedRoutes:         make(map[string]bool),
 		RouteLastSeen:       make(map[string]time.Time),
 	}
 
-	if state.MatterDevices == nil {
-		t.Error("MatterDevices should be initialised")
-	}
 	if state.ThreadBorderRouters == nil {
 		t.Error("ThreadBorderRouters should be initialised")
+	}
+	if state.ThreadMeshPrefixes == nil {
+		t.Error("ThreadMeshPrefixes should be initialised")
 	}
 	if state.AddedRoutes == nil {
 		t.Error("AddedRoutes should be initialised")

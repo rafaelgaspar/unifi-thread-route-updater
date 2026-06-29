@@ -50,39 +50,18 @@ func runPoller(done <-chan struct{}, interval time.Duration, label string, fn fu
 	}
 }
 
-// periodicRefresh cleans up expired devices, routers, and Thread mesh prefixes every 5 minutes.
+// periodicRefresh cleans up expired routers and Thread mesh prefixes every 5 minutes.
 func periodicRefresh(state *DaemonState, done <-chan struct{}) {
 	runPoller(done, 5*time.Minute, "expiration cleanup", func() error {
 		logDebug("Performing periodic expiration cleanup")
-		expiredDevices := removeExpiredDevices(state)
 		expiredRouters := removeExpiredRouters(state)
 		expiredPrefixes := removeExpiredPrefixes(state)
-		if expiredDevices > 0 || expiredRouters > 0 || expiredPrefixes > 0 {
-			logInfo("Removed %d expired Matter devices, %d expired Thread Border Routers, %d expired Thread mesh prefixes",
-				expiredDevices, expiredRouters, expiredPrefixes)
+		if expiredRouters > 0 || expiredPrefixes > 0 {
+			logInfo("Removed %d expired Thread Border Routers, %d expired Thread mesh prefixes",
+				expiredRouters, expiredPrefixes)
 		}
 		return nil
 	})
-}
-
-// removeExpiredDevices removes devices that haven't been seen for the expiration period.
-func removeExpiredDevices(state *DaemonState) int {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	now := time.Now()
-	var remaining []DeviceInfo
-	removed := 0
-	for _, device := range state.MatterDevices {
-		if now.Sub(device.LastSeen) > state.UbiquityConfig.DeviceExpiration {
-			logDebug("Removing expired Matter device: %s %v - last seen %v ago",
-				device.Name, device.IPv6Addrs, now.Sub(device.LastSeen))
-			removed++
-		} else {
-			remaining = append(remaining, device)
-		}
-	}
-	state.MatterDevices = remaining
-	return removed
 }
 
 // removeExpiredRouters removes routers that haven't been seen for the expiration period.
@@ -119,47 +98,6 @@ func removeExpiredPrefixes(state *DaemonState) int {
 		}
 	}
 	return removed
-}
-
-// mergeDevices merges newly discovered devices with existing ones, accumulating IPs per device.
-// ULA addresses from Matter devices are used to derive Thread mesh prefixes: the /64 of any
-// ULA address a Matter device advertises is the Thread mesh prefix reachable via the TBRs.
-func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	now := time.Now()
-	for _, newDevice := range newDevices {
-		found := false
-		for i, existing := range state.MatterDevices {
-			if existing.Name == newDevice.Name {
-				state.MatterDevices[i].LastSeen = now
-				for _, ip := range newDevice.IPv6Addrs {
-					state.MatterDevices[i].IPv6Addrs = appendUnique(state.MatterDevices[i].IPv6Addrs, ip)
-				}
-				logDebug("Updated existing Matter device: %s %v", newDevice.Name, state.MatterDevices[i].IPv6Addrs)
-				found = true
-				break
-			}
-		}
-		if !found {
-			newDevice.LastSeen = now
-			state.MatterDevices = append(state.MatterDevices, newDevice)
-			logDebug("Added new Matter device: %s %v", newDevice.Name, newDevice.IPv6Addrs)
-		}
-
-		// Derive Thread mesh prefixes from ULA addresses of Matter devices.
-		for _, ip := range newDevice.IPv6Addrs {
-			if len(ip) == 16 && (ip[0]&0xfe) == 0xfc {
-				cidr := calculateCIDR64(ip)
-				if cidr != "" {
-					if _, known := state.ThreadMeshPrefixes[cidr]; !known {
-						logInfo("Discovered Thread mesh prefix from Matter device %s: %s", newDevice.Name, cidr)
-					}
-					state.ThreadMeshPrefixes[cidr] = now
-				}
-			}
-		}
-	}
 }
 
 // mergeRouters merges newly discovered routers with existing ones, accumulating IPs per router.

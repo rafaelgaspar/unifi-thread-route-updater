@@ -16,13 +16,6 @@ const (
 	ERROR
 )
 
-// DeviceInfo represents a discovered Matter device
-type DeviceInfo struct {
-	Name      string
-	IPv6Addrs []net.IP
-	LastSeen  time.Time
-}
-
 // ThreadBorderRouter represents a discovered Thread Border Router
 type ThreadBorderRouter struct {
 	Name      string
@@ -37,15 +30,14 @@ type Route struct {
 	RouterName       string
 }
 
-// DaemonState holds the current state of discovered devices and routers
+// DaemonState holds the current state of discovered routers and Thread mesh prefixes
 type DaemonState struct {
 	mu                  sync.Mutex
-	MatterDevices       []DeviceInfo
 	ThreadBorderRouters []ThreadBorderRouter
-	ThreadMeshPrefixes  map[string]time.Time // fd:: prefixes discovered via ICMPv6 RAs → last seen time
+	ThreadMeshPrefixes  map[string]time.Time // fd:: prefixes from TBR omr= TXT records → last seen time
 	UbiquityConfig      UbiquityConfig
-	AddedRoutes         map[string]bool      // Track routes we've added to prevent duplicates
-	RouteLastSeen       map[string]time.Time // Track when each route was last seen
+	AddedRoutes         map[string]bool
+	RouteLastSeen       map[string]time.Time
 }
 
 // UbiquityConfig holds configuration for Ubiquity router API

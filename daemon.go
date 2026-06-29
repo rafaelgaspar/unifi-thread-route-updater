@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-// monitorMatterDevices continuously browses for Matter devices using zeroconf.
-func monitorMatterDevices(state *DaemonState, done <-chan struct{}) {
-	logInfo("Starting continuous mDNS browse for Matter devices (_matter._tcp)")
-	browseMatterDevices(state, done)
-}
-
 // monitorThreadBorderRouters continuously browses for Thread Border Routers using zeroconf.
 func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	logInfo("Starting continuous mDNS browse for Thread Border Routers (_meshcop._udp)")
@@ -22,20 +16,16 @@ func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 func displayCurrentState(state *DaemonState) {
 	state.mu.Lock()
 	routes := generateRoutes(state.ThreadMeshPrefixes, state.ThreadBorderRouters)
-	nDevices := len(state.MatterDevices)
 	nRouters := len(state.ThreadBorderRouters)
 	nPrefixes := len(state.ThreadMeshPrefixes)
 	state.mu.Unlock()
 
-	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d Thread mesh prefixes, %d routes detected",
-		nDevices, nRouters, nPrefixes, len(routes))
+	logInfo("Status update: %d Thread Border Routers, %d Thread mesh prefixes, %d routes detected",
+		nRouters, nPrefixes, len(routes))
 
 	state.mu.Lock()
 	for p, lastSeen := range state.ThreadMeshPrefixes {
 		logDebug("Thread mesh prefix: %s  last seen %v ago", p, time.Since(lastSeen).Round(time.Second))
-	}
-	for _, d := range state.MatterDevices {
-		logDebug("Matter device: %s  ips=%v", d.Name, d.IPv6Addrs)
 	}
 	for _, r := range state.ThreadBorderRouters {
 		for _, ip := range r.IPv6Addrs {

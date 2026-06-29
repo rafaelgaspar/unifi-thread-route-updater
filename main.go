@@ -12,7 +12,7 @@ func main() {
 	initLogLevel()
 
 	logInfo("Thread Route Updater Daemon starting...")
-	logInfo("Monitoring for Matter devices and Thread Border Routers")
+	logInfo("Monitoring for Thread Border Routers via _meshcop._udp")
 	logInfo("Press Ctrl+C to stop")
 
 	// Get configuration
@@ -20,7 +20,6 @@ func main() {
 
 	// Create initial state
 	state := &DaemonState{
-		MatterDevices:       []DeviceInfo{},
 		ThreadBorderRouters: []ThreadBorderRouter{},
 		ThreadMeshPrefixes:  make(map[string]time.Time),
 		UbiquityConfig:      config,
@@ -36,9 +35,7 @@ func main() {
 	done := make(chan struct{})
 
 	// Start continuous monitoring
-	go monitorMatterDevices(state, done)
 	go monitorThreadBorderRouters(state, done)
-	go listenForRouterAdvertisements(state, done)
 
 	// Periodic refresh every 5 minutes to catch devices that might have been missed
 	go periodicRefresh(state, done)
