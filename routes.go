@@ -122,6 +122,8 @@ func removeExpiredPrefixes(state *DaemonState) int {
 }
 
 // mergeDevices merges newly discovered devices with existing ones, accumulating IPs per device.
+// ULA addresses from Matter devices are used to derive Thread mesh prefixes: the /64 of any
+// ULA address a Matter device advertises is the Thread mesh prefix reachable via the TBRs.
 func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -143,6 +145,19 @@ func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
 			newDevice.LastSeen = now
 			state.MatterDevices = append(state.MatterDevices, newDevice)
 			logDebug("Added new Matter device: %s %v", newDevice.Name, newDevice.IPv6Addrs)
+		}
+
+		// Derive Thread mesh prefixes from ULA addresses of Matter devices.
+		for _, ip := range newDevice.IPv6Addrs {
+			if len(ip) == 16 && (ip[0]&0xfe) == 0xfc {
+				cidr := calculateCIDR64(ip)
+				if cidr != "" {
+					if _, known := state.ThreadMeshPrefixes[cidr]; !known {
+						logInfo("Discovered Thread mesh prefix from Matter device %s: %s", newDevice.Name, cidr)
+					}
+					state.ThreadMeshPrefixes[cidr] = now
+				}
+			}
 		}
 	}
 }

@@ -32,7 +32,7 @@ func displayCurrentState(state *DaemonState) {
 
 	state.mu.Lock()
 	for p, lastSeen := range state.ThreadMeshPrefixes {
-		logDebug("Thread mesh prefix (from RA): %s  last seen %v ago", p, time.Since(lastSeen).Round(time.Second))
+		logDebug("Thread mesh prefix: %s  last seen %v ago", p, time.Since(lastSeen).Round(time.Second))
 	}
 	for _, r := range state.ThreadBorderRouters {
 		for _, ip := range r.IPv6Addrs {
