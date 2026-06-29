@@ -81,6 +81,15 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 			return fmt.Errorf("read error: %v", err)
 		}
 
+		// Log every received packet for debugging.
+		ifIdx := 0
+		if cm != nil {
+			ifIdx = cm.IfIndex
+		}
+		if n >= 1 {
+			logDebug("ICMPv6 packet received: type=%d len=%d ifIndex=%d", buf[0], n, ifIdx)
+		}
+
 		// Filter by interface if one is configured.
 		if iface != nil && cm != nil && cm.IfIndex != iface.Index {
 			continue
