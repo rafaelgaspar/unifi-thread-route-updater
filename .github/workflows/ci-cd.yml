@@ -107,7 +107,7 @@ jobs:
 
     - name: Package Helm chart
       run: |
-        helm package chart/thread-route-updater --destination ./packages
+        helm package chart/unifi-thread-route-updater --destination ./packages
 
     - name: Generate chart index
       run: |
@@ -146,7 +146,7 @@ jobs:
 
     - name: Push Helm chart to OCI registry
       run: |
-        helm push ./packages/thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
+        helm push ./packages/unifi-thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
 
   security-scan:
     needs: build-and-push

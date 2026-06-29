@@ -31,11 +31,14 @@ A Go daemon that continuously monitors your network for Matter devices and Threa
 
 ### Option 1: Kubernetes Deployment (Recommended)
 
-1. Add the Helm repository:
+1. Install the Helm chart from OCI:
 
 ```bash
-helm repo add thread-route-updater oci://ghcr.io/rafaelgaspar/thread-route-updater
-helm repo update
+helm install unifi-thread-route-updater oci://ghcr.io/rafaelgaspar/unifi-thread-route-updater/chart/unifi-thread-route-updater \
+  --version 0.1.1 \
+  --namespace thread-route-updater \
+  --create-namespace \
+  --values values.yaml
 ```
 
 2. Create a values file:
@@ -54,12 +57,12 @@ secrets:
   ubiquitiPassword: "your-secure-password"
 ```
 
-3. Deploy to Kubernetes:
+3. Or upgrade an existing installation:
 
 ```bash
-helm install thread-route-updater thread-route-updater/thread-route-updater \
+helm upgrade unifi-thread-route-updater oci://ghcr.io/rafaelgaspar/unifi-thread-route-updater/chart/unifi-thread-route-updater \
+  --version 0.1.1 \
   --namespace thread-route-updater \
-  --create-namespace \
   --values values.yaml
 ```
 
@@ -195,7 +198,7 @@ The project includes a complete CI/CD pipeline with:
 - **Security scanning** with Trivy
 - **Helm chart packaging** and OCI publishing
 - **Automated releases** with binary artifacts
-- **Dependency updates** with Dependabot
+- **Dependency updates** with Renovate
 
 ### Monitoring and Observability
 
