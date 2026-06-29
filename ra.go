@@ -3,9 +3,10 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
+	"syscall"
 	"time"
 
-	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv6"
 )
 
@@ -32,19 +33,39 @@ func listenForRouterAdvertisements(state *DaemonState, done <-chan struct{}) {
 }
 
 func runRAListener(state *DaemonState, done <-chan struct{}) error {
-	conn, err := icmp.ListenPacket("ip6:ipv6-icmp", "::")
+	// Open raw ICMPv6 socket manually so we can set SO_BINDTODEVICE before
+	// handing it to ipv6.PacketConn.
+	fd, err := syscall.Socket(syscall.AF_INET6, syscall.SOCK_RAW, syscall.IPPROTO_ICMPV6)
 	if err != nil {
 		return fmt.Errorf("failed to open ICMPv6 socket: %v", err)
-	}
-	defer conn.Close() //nolint:errcheck
-
-	pc := conn.IPv6PacketConn()
-	if err := pc.SetControlMessage(ipv6.FlagInterface, true); err != nil {
-		return fmt.Errorf("failed to set control message: %v", err)
 	}
 
 	iface := getMDNSInterface()
 	logInfo("Listening for ICMPv6 Router Advertisements on %s", ifaceName(iface))
+
+	// Bind to the specific interface so the kernel delivers multicast packets
+	// (like RAs) that it would otherwise only handle internally.
+	if iface != nil {
+		if err := syscall.SetsockoptString(fd, syscall.SOL_SOCKET, syscall.SO_BINDTODEVICE, iface.Name); err != nil {
+			syscall.Close(fd) //nolint:errcheck
+			return fmt.Errorf("SO_BINDTODEVICE failed: %v", err)
+		}
+		logDebug("Bound raw socket to %s via SO_BINDTODEVICE", iface.Name)
+	}
+
+	// Wrap fd in a net.PacketConn via os.File so ipv6.PacketConn can use it.
+	f := os.NewFile(uintptr(fd), "icmpv6")
+	netConn, err := net.FilePacketConn(f)
+	f.Close() //nolint:errcheck
+	if err != nil {
+		return fmt.Errorf("FilePacketConn failed: %v", err)
+	}
+	defer netConn.Close() //nolint:errcheck
+
+	pc := ipv6.NewPacketConn(netConn)
+	if err := pc.SetControlMessage(ipv6.FlagInterface, true); err != nil {
+		return fmt.Errorf("failed to set control message: %v", err)
+	}
 
 	// Join ff02::1 (all-nodes multicast) so the raw socket receives RAs on macvlan interfaces.
 	if iface != nil {
@@ -70,7 +91,7 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 		default:
 		}
 
-		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		if err := netConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 			return fmt.Errorf("failed to set read deadline: %v", err)
 		}
 		n, cm, _, err := pc.ReadFrom(buf)
@@ -203,6 +224,7 @@ func maskPrefix(ip net.IP, prefixLen int) net.IP {
 	}
 	return masked
 }
+
 
 func ifaceName(iface *net.Interface) string {
 	if iface == nil {
