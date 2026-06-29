@@ -46,6 +46,16 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 	iface := getMDNSInterface()
 	logInfo("Listening for ICMPv6 Router Advertisements on %s", ifaceName(iface))
 
+	// Join ff02::1 (all-nodes multicast) so the raw socket receives RAs on macvlan interfaces.
+	if iface != nil {
+		group := &net.UDPAddr{IP: net.ParseIP("ff02::1")}
+		if err := pc.JoinGroup(iface, group); err != nil {
+			logWarn("Failed to join ff02::1 on %s: %v", iface.Name, err)
+		} else {
+			logDebug("Joined ff02::1 on %s", iface.Name)
+		}
+	}
+
 	if err := sendRouterSolicitation(pc, iface); err != nil {
 		logWarn("Failed to send Router Solicitation: %v", err)
 	} else {
