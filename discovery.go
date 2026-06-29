@@ -61,13 +61,7 @@ func browseService(service string, done <-chan struct{}, handler func(*zeroconf.
 			}
 		}()
 
-		iface := getMDNSInterface()
-		var opts []zeroconf.ClientOption
-		if iface != nil {
-			opts = append(opts, zeroconf.SelectIfaces([]net.Interface{*iface}))
-		}
-
-		resolver, err := zeroconf.NewResolver(opts...)
+		resolver, err := zeroconf.NewResolver()
 		if err != nil {
 			cancel()
 			logWarn("mDNS browse %s: failed to create resolver: %v — retrying in 5s", service, err)
