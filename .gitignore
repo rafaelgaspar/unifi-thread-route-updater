@@ -6,9 +6,9 @@ config.env
 
 # Build artifacts
 build/
-thread-route-updater
-unifi-thread-route-updater
-ubiquity-thread-route-updater
+/thread-route-updater
+/unifi-thread-route-updater
+/ubiquity-thread-route-updater
 *.exe
 *.dll
 *.so

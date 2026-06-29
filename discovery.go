@@ -58,10 +58,11 @@ func discoverThreadBorderRouters() ([]ThreadBorderRouter, error) {
 func queryMDNS(service string, timeout time.Duration) ([]*mdns.ServiceEntry, error) {
 	entriesCh := make(chan *mdns.ServiceEntry, 64)
 	params := &mdns.QueryParam{
-		Service: service,
-		Domain:  "local",
-		Timeout: timeout,
-		Entries: entriesCh,
+		Service:   service,
+		Domain:    "local",
+		Timeout:   timeout,
+		Entries:   entriesCh,
+		Interface: getMDNSInterface(),
 	}
 
 	var entries []*mdns.ServiceEntry

@@ -73,7 +73,10 @@ affinity: {}
 config:
   # Logging level (DEBUG, INFO, WARN, ERROR)
   logLevel: "INFO"
-  
+
+  # Network interface to use for mDNS queries (e.g. "eth0"). Leave empty to use all interfaces.
+  mdnsInterface: ""
+
   # Ubiquiti router configuration
   ubiquiti:
     enabled: true

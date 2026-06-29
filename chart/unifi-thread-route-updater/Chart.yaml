@@ -2,7 +2,7 @@ apiVersion: v2
 name: unifi-thread-route-updater
 description: A Helm chart for Thread Route Updater - automatically manages Thread network static routes on Ubiquiti routers
 type: application
-version: 0.1.4
+version: 0.1.5
 appVersion: "0.1.4"
 home: https://github.com/rafaelgaspar/unifi-thread-route-updater
 sources:

@@ -2,9 +2,24 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"time"
 )
+
+// getMDNSInterface returns the network interface to use for mDNS queries, or nil for all interfaces.
+func getMDNSInterface() *net.Interface {
+	name := os.Getenv("MDNS_INTERFACE")
+	if name == "" {
+		return nil
+	}
+	iface, err := net.InterfaceByName(name)
+	if err != nil {
+		logWarn("MDNS_INTERFACE %q not found: %v — using all interfaces", name, err)
+		return nil
+	}
+	return iface
+}
 
 // getUbiquityConfig returns the Ubiquity router configuration from environment variables.
 func getUbiquityConfig() UbiquityConfig {
