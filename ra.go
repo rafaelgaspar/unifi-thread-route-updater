@@ -36,7 +36,7 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to open ICMPv6 socket: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	pc := conn.IPv6PacketConn()
 	if err := pc.SetControlMessage(ipv6.FlagInterface, true); err != nil {
@@ -54,7 +54,9 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 		default:
 		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			return fmt.Errorf("failed to set read deadline: %v", err)
+		}
 		n, cm, _, err := pc.ReadFrom(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
