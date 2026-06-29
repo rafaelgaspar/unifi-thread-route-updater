@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Build and Release
 
 on:
   push:
@@ -89,65 +89,6 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-  package-helm:
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-    - name: Set up Helm
-      uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
-      with:
-        version: '4.2.2'
-
-    - name: Package Helm chart
-      run: |
-        helm package chart/unifi-thread-route-updater --destination ./packages
-
-    - name: Generate chart index
-      run: |
-        helm repo index ./packages --url https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
-
-    - name: Upload Helm chart packages
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-      with:
-        name: helm-chart-packages
-        path: ./packages/
-
-  publish-helm:
-    needs: [test, package-helm]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-    - name: Download Helm chart packages
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-      with:
-        name: helm-chart-packages
-        path: ./packages
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Push Helm chart to OCI registry
-      run: |
-        helm push ./packages/unifi-thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
-
   security-scan:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -168,7 +109,7 @@ jobs:
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@cf5c088a69634cd13ccddc735d7926162c31f9a6 # master
       with:
-        image-ref: ${{ env.REGISTRY }}/${{ github.repository }}:latest
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
         format: 'sarif'
         output: 'trivy-results.sarif'
         exit-code: '0'
@@ -178,3 +119,71 @@ jobs:
       if: always()
       with:
         sarif_file: 'trivy-results.sarif'
+
+  publish-helm:
+    needs: test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+    - name: Set up Helm
+      uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+      with:
+        version: '4.2.2'
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Package and push Helm chart
+      run: |
+        helm package chart/unifi-thread-route-updater --destination ./packages
+        helm push ./packages/unifi-thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
+
+  github-release:
+    needs: [test, build-and-push]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+    - name: Set up Go
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version: '1.26'
+
+    - name: Build binaries
+      run: |
+        GOOS=linux GOARCH=amd64 go build -o thread-route-updater-linux-amd64 .
+        GOOS=linux GOARCH=arm64 go build -o thread-route-updater-linux-arm64 .
+        GOOS=darwin GOARCH=amd64 go build -o thread-route-updater-darwin-amd64 .
+        GOOS=darwin GOARCH=arm64 go build -o thread-route-updater-darwin-arm64 .
+        GOOS=windows GOARCH=amd64 go build -o thread-route-updater-windows-amd64.exe .
+
+    - name: Create checksums
+      run: sha256sum thread-route-updater-* > checksums.txt
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
+      with:
+        files: |
+          thread-route-updater-*
+          checksums.txt
+        generate_release_notes: true
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
