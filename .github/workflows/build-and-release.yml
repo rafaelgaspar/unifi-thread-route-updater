@@ -63,7 +63,7 @@ jobs:
       run: ct lint --all --config ct.yaml
 
   build-image:
-    needs: [test, lint-chart]
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,8 +94,39 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+  security-scan:
+    needs: build-image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+
+    steps:
+    - name: Log in to Container Registry
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@cf5c088a69634cd13ccddc735d7926162c31f9a6 # master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        exit-code: '0'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
   push-image:
-    needs: [build-image, lint-chart]
+    needs: [build-image, lint-chart, security-scan]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -130,38 +161,8 @@ jobs:
           docker buildx imagetools create --tag "$TAG" "$SOURCE"
         done
 
-  security-scan:
-    needs: push-image
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-      security-events: write
-
-    steps:
-    - name: Log in to Container Registry
-      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@cf5c088a69634cd13ccddc735d7926162c31f9a6 # master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        exit-code: '0'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
-
   publish-helmchart:
-    needs: [build-image, lint-chart]
+    needs: [build-image, lint-chart, security-scan]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -189,7 +190,7 @@ jobs:
         helm push ./packages/unifi-thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
 
   github-release:
-    needs: [build-image, lint-chart]
+    needs: [build-image, lint-chart, security-scan]
     runs-on: ubuntu-latest
     permissions:
       contents: write
