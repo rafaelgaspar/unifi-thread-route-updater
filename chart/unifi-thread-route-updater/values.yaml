@@ -74,8 +74,10 @@ config:
   # Logging level (DEBUG, INFO, WARN, ERROR)
   logLevel: "INFO"
 
-  # Network interface to use for mDNS queries (e.g. "eth0"). Leave empty to use all interfaces.
-  mdnsInterface: ""
+  # Network interface to use for mDNS queries.
+  # When using Multus, set this to the secondary interface name (e.g. "net1").
+  # Leave empty to use all interfaces.
+  mdnsInterface: "eth1"
 
   # Ubiquiti router configuration
   ubiquiti:
