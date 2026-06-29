@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "thread-route-updater.fullname" . }}
+  name: {{ include "unifi-thread-route-updater.fullname" . }}
   labels:
-    {{- include "thread-route-updater.labels" . | nindent 4 }}
+    {{- include "unifi-thread-route-updater.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "thread-route-updater.selectorLabels" . | nindent 6 }}
+      {{- include "unifi-thread-route-updater.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -18,13 +18,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "thread-route-updater.selectorLabels" . | nindent 8 }}
+        {{- include "unifi-thread-route-updater.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "thread-route-updater.serviceAccountName" . }}
+      serviceAccountName: {{ include "unifi-thread-route-updater.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -43,7 +43,7 @@ spec:
             - name: UBIQUITY_ROUTER_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ default (include "thread-route-updater.fullname" .) .Values.secrets.secretName }}
+                  name: {{ default (include "unifi-thread-route-updater.fullname" .) .Values.secrets.secretName }}
                   key: ubiquiti-password
             - name: UBIQUITY_ROUTER_INSECURE_SSL
               value: {{ .Values.config.ubiquiti.insecureSSL | quote }}
