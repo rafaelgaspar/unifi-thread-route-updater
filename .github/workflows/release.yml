@@ -81,4 +81,4 @@ jobs:
 
     - name: Push Helm chart to OCI registry
       run: |
-        helm push ./packages/thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}
+        helm push ./packages/thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
