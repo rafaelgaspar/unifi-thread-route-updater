@@ -10,24 +10,6 @@ import (
 	"github.com/grandcat/zeroconf"
 )
 
-// browseMatterDevices continuously browses for Matter devices using zeroconf.
-// zeroconf sends active queries AND listens passively for announcements, so
-// devices that don't respond to queries are still discovered when they announce.
-// The browse runs until done is closed, restarting on error with a short backoff.
-func browseMatterDevices(state *DaemonState, done <-chan struct{}) {
-	browseService("_matter._tcp", done, func(entry *zeroconf.ServiceEntry) {
-		ips := extractIPv6s(entry)
-		if len(ips) == 0 {
-			return
-		}
-		mergeDevices(state, []DeviceInfo{{
-			Name:      entry.ServiceInstanceName(),
-			IPv6Addrs: ips,
-			LastSeen:  time.Now(),
-		}})
-	})
-}
-
 // browseThreadBorderRouters continuously browses for Thread Border Routers using zeroconf.
 func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	browseService("_meshcop._udp", done, func(entry *zeroconf.ServiceEntry) {
@@ -54,25 +36,36 @@ func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	})
 }
 
+// maskPrefix zeroes out host bits beyond prefixLen.
+func maskPrefix(ip net.IP, prefixLen int) net.IP {
+	masked := make(net.IP, 16)
+	copy(masked, ip)
+	mask := net.CIDRMask(prefixLen, 128)
+	for i := range masked {
+		masked[i] &= mask[i]
+	}
+	return masked
+}
+
 // extractOMRPrefix parses the Thread Off-Mesh Route prefix from _meshcop._udp TXT records.
-// The omr= field is: 1 byte prefix-length, followed by 16 bytes of IPv6 prefix.
+// The omr= field is: 1 byte prefix-length, followed by ceil(prefixLen/8) prefix bytes.
+// The prefix bytes are not zero-padded to 16 bytes — only significant bytes are included.
 func extractOMRPrefix(txt []string) string {
 	for _, field := range txt {
 		if !strings.HasPrefix(field, "omr=") {
 			continue
 		}
-		val := field[4:]
-		if len(val) < 17 {
+		val := []byte(field[4:])
+		if len(val) < 2 {
 			continue
 		}
 		prefixLen := int(val[0])
 		if prefixLen == 0 || prefixLen > 128 {
 			continue
 		}
-		prefix := net.IP([]byte(val[1:17]))
-		if len(prefix) != 16 {
-			continue
-		}
+		// Pad to 16 bytes
+		prefix := make(net.IP, 16)
+		copy(prefix, val[1:])
 		// Only accept ULA prefixes (fc00::/7)
 		if (prefix[0] & 0xfe) != 0xfc {
 			continue
