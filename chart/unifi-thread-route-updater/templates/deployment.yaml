@@ -38,16 +38,16 @@ spec:
               value: {{ .Values.config.logLevel | quote }}
             - name: UBIQUITY_ROUTER_HOSTNAME
               value: {{ .Values.config.ubiquiti.hostname | quote }}
-            - name: UBIQUITY_ROUTER_USERNAME
+            - name: UBIQUITY_USERNAME
               value: {{ .Values.config.ubiquiti.username | quote }}
-            - name: UBIQUITY_ROUTER_PASSWORD
+            - name: UBIQUITY_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ default (include "unifi-thread-route-updater.fullname" .) .Values.secrets.secretName }}
                   key: ubiquiti-password
-            - name: UBIQUITY_ROUTER_INSECURE_SSL
+            - name: UBIQUITY_INSECURE_SSL
               value: {{ .Values.config.ubiquiti.insecureSSL | quote }}
-            - name: UBIQUITY_ROUTER_ENABLED
+            - name: UBIQUITY_ENABLED
               value: {{ .Values.config.ubiquiti.enabled | quote }}
             {{- if .Values.config.mdnsInterface }}
             - name: MDNS_INTERFACE
