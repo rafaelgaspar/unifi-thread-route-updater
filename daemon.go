@@ -21,26 +21,24 @@ func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 // displayCurrentState logs the current state and triggers a route sync.
 func displayCurrentState(state *DaemonState) {
 	state.mu.Lock()
-	routes := generateRoutes(state.MatterDevices, state.ThreadBorderRouters)
+	routes := generateRoutes(state.ThreadMeshPrefixes, state.ThreadBorderRouters)
 	nDevices := len(state.MatterDevices)
 	nRouters := len(state.ThreadBorderRouters)
+	nPrefixes := len(state.ThreadMeshPrefixes)
 	state.mu.Unlock()
 
-	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d routes detected",
-		nDevices, nRouters, len(routes))
+	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d Thread mesh prefixes, %d routes detected",
+		nDevices, nRouters, nPrefixes, len(routes))
 
 	state.mu.Lock()
-	for _, d := range state.MatterDevices {
-		for _, ip := range d.IPv6Addrs {
-			cidr := calculateCIDR64(ip)
-			logDebug("Matter device: %s  ip=%s  cidr=%s  routable=%v", d.Name, ip, cidr, isRoutableCIDR(cidr))
-		}
+	for p, lastSeen := range state.ThreadMeshPrefixes {
+		logDebug("Thread mesh prefix (from RA): %s  last seen %v ago", p, time.Since(lastSeen).Round(time.Second))
 	}
 	for _, r := range state.ThreadBorderRouters {
 		for _, ip := range r.IPv6Addrs {
 			cidr := calculateCIDR64(ip)
-			logDebug("Thread Border Router: %s  ip=%s  cidr=%s  routerRoutable=%v  cidrRoutable=%v",
-				r.Name, ip, cidr, isRoutableRouterAddress(ip), isRoutableCIDR(cidr))
+			logDebug("Thread Border Router: %s  ip=%s  cidr=%s  routerRoutable=%v",
+				r.Name, ip, cidr, isRoutableRouterAddress(ip))
 		}
 	}
 	state.mu.Unlock()

@@ -22,6 +22,7 @@ func main() {
 	state := &DaemonState{
 		MatterDevices:       []DeviceInfo{},
 		ThreadBorderRouters: []ThreadBorderRouter{},
+		ThreadMeshPrefixes:  make(map[string]time.Time),
 		UbiquityConfig:      config,
 		AddedRoutes:         make(map[string]bool),
 		RouteLastSeen:       make(map[string]time.Time),
@@ -37,6 +38,7 @@ func main() {
 	// Start continuous monitoring
 	go monitorMatterDevices(state, done)
 	go monitorThreadBorderRouters(state, done)
+	go listenForRouterAdvertisements(state, done)
 
 	// Periodic refresh every 5 minutes to catch devices that might have been missed
 	go periodicRefresh(state, done)

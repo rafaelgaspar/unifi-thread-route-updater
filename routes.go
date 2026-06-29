@@ -5,41 +5,20 @@ import (
 	"time"
 )
 
-// generateRoutes generates routing entries from discovered devices and routers.
-// Each device may have multiple IPv6 addresses (Thread mesh fd:: and LAN 2a02::).
-// Each router may also have multiple IPs. We generate a route for every
-// (device CIDR, routable router IP) pair where the CIDRs differ.
-func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route {
+// generateRoutes generates routing entries from RA-discovered Thread mesh prefixes
+// and border routers. For each Thread mesh prefix × each routable border router IP,
+// one route is created. Border router IPs are stable (MAC-based EUI-64); prefixes
+// are dynamic and sourced from ICMPv6 Router Advertisements.
+func generateRoutes(meshPrefixes map[string]time.Time, routers []ThreadBorderRouter) []Route {
 	routeMap := make(map[string]Route)
 
-	deviceCIDRs := make(map[string]bool)
-	for _, device := range devices {
-		for _, ip := range device.IPv6Addrs {
-			if cidr := calculateCIDR64(ip); cidr != "" && isRoutableCIDR(cidr) {
-				deviceCIDRs[cidr] = true
-			}
-		}
-	}
-
-	routerCIDRs := make(map[string]bool)
-	for _, router := range routers {
-		for _, ip := range router.IPv6Addrs {
-			if cidr := calculateCIDR64(ip); cidr != "" && isRoutableCIDR(cidr) {
-				routerCIDRs[cidr] = true
-			}
-		}
-	}
-
-	for deviceCIDR := range deviceCIDRs {
-		if routerCIDRs[deviceCIDR] {
-			continue
-		}
+	for prefix := range meshPrefixes {
 		for _, router := range routers {
 			for _, ip := range router.IPv6Addrs {
 				if isRoutableRouterAddress(ip) {
-					key := fmt.Sprintf("%s->%s", deviceCIDR, ip.String())
+					key := fmt.Sprintf("%s->%s", prefix, ip.String())
 					routeMap[key] = Route{
-						CIDR:             deviceCIDR,
+						CIDR:             prefix,
 						ThreadRouterIPv6: ip.String(),
 						RouterName:       router.Name,
 					}
@@ -71,14 +50,16 @@ func runPoller(done <-chan struct{}, interval time.Duration, label string, fn fu
 	}
 }
 
-// periodicRefresh cleans up expired devices and routers every 5 minutes.
+// periodicRefresh cleans up expired devices, routers, and Thread mesh prefixes every 5 minutes.
 func periodicRefresh(state *DaemonState, done <-chan struct{}) {
 	runPoller(done, 5*time.Minute, "expiration cleanup", func() error {
 		logDebug("Performing periodic expiration cleanup")
 		expiredDevices := removeExpiredDevices(state)
 		expiredRouters := removeExpiredRouters(state)
-		if expiredDevices > 0 || expiredRouters > 0 {
-			logInfo("Removed %d expired Matter devices and %d expired Thread Border Routers", expiredDevices, expiredRouters)
+		expiredPrefixes := removeExpiredPrefixes(state)
+		if expiredDevices > 0 || expiredRouters > 0 || expiredPrefixes > 0 {
+			logInfo("Removed %d expired Matter devices, %d expired Thread Border Routers, %d expired Thread mesh prefixes",
+				expiredDevices, expiredRouters, expiredPrefixes)
 		}
 		return nil
 	})
@@ -121,6 +102,22 @@ func removeExpiredRouters(state *DaemonState) int {
 		}
 	}
 	state.ThreadBorderRouters = remaining
+	return removed
+}
+
+// removeExpiredPrefixes removes Thread mesh prefixes not seen in an RA for the grace period.
+func removeExpiredPrefixes(state *DaemonState) int {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	now := time.Now()
+	removed := 0
+	for prefix, lastSeen := range state.ThreadMeshPrefixes {
+		if now.Sub(lastSeen) > state.UbiquityConfig.RouteGracePeriod {
+			logDebug("Removing expired Thread mesh prefix: %s - last seen %v ago", prefix, now.Sub(lastSeen))
+			delete(state.ThreadMeshPrefixes, prefix)
+			removed++
+		}
+	}
 	return removed
 }
 

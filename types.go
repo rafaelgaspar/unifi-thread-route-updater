@@ -42,6 +42,7 @@ type DaemonState struct {
 	mu                  sync.Mutex
 	MatterDevices       []DeviceInfo
 	ThreadBorderRouters []ThreadBorderRouter
+	ThreadMeshPrefixes  map[string]time.Time // fd:: prefixes discovered via ICMPv6 RAs → last seen time
 	UbiquityConfig      UbiquityConfig
 	AddedRoutes         map[string]bool      // Track routes we've added to prevent duplicates
 	RouteLastSeen       map[string]time.Time // Track when each route was last seen
