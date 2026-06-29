@@ -48,6 +48,10 @@ func fetchHAThreadPrefixes(state *DaemonState, cfg HomeAssistantConfig) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusNotFound {
+		logDebug("home assistant thread datasets: endpoint not available (requires OTBR integration)")
+		return nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
