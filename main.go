@@ -36,6 +36,7 @@ func main() {
 
 	// Start continuous monitoring
 	go monitorThreadBorderRouters(state, done)
+	go browseMatterDevices(state, done)
 
 	// Periodic refresh every 5 minutes to catch devices that might have been missed
 	go periodicRefresh(state, done)

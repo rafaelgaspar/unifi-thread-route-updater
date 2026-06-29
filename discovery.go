@@ -10,6 +10,28 @@ import (
 	"github.com/grandcat/zeroconf"
 )
 
+// browseMatterDevices browses for Matter devices solely to extract Thread mesh prefixes
+// from their ULA addresses — a fallback for TBRs that don't advertise omr= in mDNS.
+func browseMatterDevices(state *DaemonState, done <-chan struct{}) {
+	browseService("_matter._tcp", done, 5*time.Minute, func(entry *zeroconf.ServiceEntry) {
+		for _, ip := range extractIPv6s(entry) {
+			if len(ip) == 16 && (ip[0]&0xfe) == 0xfc {
+				cidr := calculateCIDR64(ip)
+				if cidr == "" {
+					continue
+				}
+				state.mu.Lock()
+				if _, known := state.ThreadMeshPrefixes[cidr]; !known {
+					logInfo("Discovered Thread mesh prefix from Matter device %s: %s",
+						extractRouterName(entry.ServiceInstanceName()), cidr)
+				}
+				state.ThreadMeshPrefixes[cidr] = time.Now()
+				state.mu.Unlock()
+			}
+		}
+	})
+}
+
 // browseThreadBorderRouters continuously browses for Thread Border Routers using zeroconf.
 func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	browseService("_meshcop._udp", done, 5*time.Minute, func(entry *zeroconf.ServiceEntry) {
@@ -56,16 +78,21 @@ func extractOMRPrefix(txt []string) string {
 			continue
 		}
 		val := []byte(field[4:])
+		logDebug("extractOMRPrefix: val len=%d bytes=%x", len(val), val)
 		if len(val) < 2 {
+			logDebug("extractOMRPrefix: too short")
 			continue
 		}
 		prefixLen := int(val[0])
+		logDebug("extractOMRPrefix: prefixLen=%d", prefixLen)
 		if prefixLen == 0 || prefixLen > 128 {
+			logDebug("extractOMRPrefix: invalid prefixLen")
 			continue
 		}
 		// Pad to 16 bytes
 		prefix := make(net.IP, 16)
 		copy(prefix, val[1:])
+		logDebug("extractOMRPrefix: prefix=%s ula=%v", prefix.String(), (prefix[0]&0xfe) == 0xfc)
 		// Only accept ULA prefixes (fc00::/7)
 		if (prefix[0] & 0xfe) != 0xfc {
 			continue
