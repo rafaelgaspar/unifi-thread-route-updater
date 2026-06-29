@@ -77,34 +77,50 @@ func appendUnique(ips []net.IP, ip net.IP) []net.IP {
 	return append(ips, ip)
 }
 
-// queryMDNS performs an mDNS query and returns all entries found within the timeout.
+// queryMDNS performs multiple mDNS queries and returns all entries found.
+// Sending several queries is important because Thread mesh devices can be slow
+// to respond and may miss a single multicast query.
 func queryMDNS(service string, timeout time.Duration) ([]*mdns.ServiceEntry, error) {
-	entriesCh := make(chan *mdns.ServiceEntry, 64)
-	params := &mdns.QueryParam{
-		Service:   service,
-		Domain:    "local",
-		Timeout:   timeout,
-		Entries:   entriesCh,
-		Interface: getMDNSInterface(),
-	}
+	const rounds = 3
+	seen := make(map[string]bool)
+	var all []*mdns.ServiceEntry
 
-	var entries []*mdns.ServiceEntry
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for e := range entriesCh {
-			if e != nil {
-				entries = append(entries, e)
+	for i := 0; i < rounds; i++ {
+		entriesCh := make(chan *mdns.ServiceEntry, 64)
+		params := &mdns.QueryParam{
+			Service:   service,
+			Domain:    "local",
+			Timeout:   timeout,
+			Entries:   entriesCh,
+			Interface: getMDNSInterface(),
+		}
+
+		var entries []*mdns.ServiceEntry
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for e := range entriesCh {
+				if e != nil {
+					entries = append(entries, e)
+				}
+			}
+		}()
+
+		if err := mdns.Query(params); err != nil {
+			return nil, err
+		}
+		close(entriesCh)
+		<-done
+
+		for _, e := range entries {
+			key := fmt.Sprintf("%s|%v|%v", e.Name, e.AddrV6, e.AddrV4)
+			if !seen[key] {
+				seen[key] = true
+				all = append(all, e)
 			}
 		}
-	}()
-
-	if err := mdns.Query(params); err != nil {
-		return nil, err
 	}
-	close(entriesCh)
-	<-done
-	return entries, nil
+	return all, nil
 }
 
 // extractIPv6 returns the first routable IPv6 address from an mDNS entry.
