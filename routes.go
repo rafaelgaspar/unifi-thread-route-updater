@@ -71,30 +71,6 @@ func runPoller(done <-chan struct{}, interval time.Duration, label string, fn fu
 	}
 }
 
-// listenForMatterDevices polls for Matter devices every 30 seconds.
-func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
-	runPoller(done, 30*time.Second, "Matter device", func() error {
-		devices, err := discoverMatterDevices()
-		if err != nil {
-			return err
-		}
-		mergeDevices(state, devices)
-		return nil
-	})
-}
-
-// listenForThreadBorderRouters polls for Thread Border Routers every 30 seconds.
-func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
-	runPoller(done, 30*time.Second, "Thread Border Router", func() error {
-		routers, err := discoverThreadBorderRouters()
-		if err != nil {
-			return err
-		}
-		mergeRouters(state, routers)
-		return nil
-	})
-}
-
 // periodicRefresh cleans up expired devices and routers every 5 minutes.
 func periodicRefresh(state *DaemonState, done <-chan struct{}) {
 	runPoller(done, 5*time.Minute, "expiration cleanup", func() error {

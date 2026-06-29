@@ -1,70 +1,126 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
 	"time"
 
-	"github.com/hashicorp/mdns"
+	"github.com/grandcat/zeroconf"
 )
 
-// discoverMatterDevices discovers Matter devices using mDNS.
-// hashicorp/mdns emits one ServiceEntry per AAAA record, so the same device
-// may appear multiple times with different IPs. We collect all of them.
-func discoverMatterDevices() ([]DeviceInfo, error) {
-	entries, err := queryMDNS("_matter._tcp", 10*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("error discovering _matter._tcp: %v", err)
-	}
-
-	allIPs := make(map[string][]net.IP)
-	for _, entry := range entries {
-		ip := extractIPv6(entry)
-		if ip == nil {
-			continue
+// browseMatterDevices continuously browses for Matter devices using zeroconf.
+// zeroconf sends active queries AND listens passively for announcements, so
+// devices that don't respond to queries are still discovered when they announce.
+// The browse runs until done is closed, restarting on error with a short backoff.
+func browseMatterDevices(state *DaemonState, done <-chan struct{}) {
+	browseService("_matter._tcp", done, func(entry *zeroconf.ServiceEntry) {
+		ips := extractIPv6s(entry)
+		if len(ips) == 0 {
+			return
 		}
-		allIPs[entry.Name] = appendUnique(allIPs[entry.Name], ip)
-	}
-
-	var devices []DeviceInfo
-	for name, ips := range allIPs {
-		devices = append(devices, DeviceInfo{
-			Name:      name,
+		mergeDevices(state, []DeviceInfo{{
+			Name:      entry.ServiceInstanceName(),
 			IPv6Addrs: ips,
 			LastSeen:  time.Now(),
-		})
-	}
-	return devices, nil
+		}})
+	})
 }
 
-// discoverThreadBorderRouters discovers Thread Border Routers using mDNS.
-// hashicorp/mdns emits one ServiceEntry per AAAA record, so the same router
-// may appear multiple times with different IPs. We collect all of them.
-func discoverThreadBorderRouters() ([]ThreadBorderRouter, error) {
-	entries, err := queryMDNS("_meshcop._udp", 10*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("error discovering _meshcop._udp: %v", err)
-	}
-
-	allIPs := make(map[string][]net.IP)
-	for _, entry := range entries {
-		ip := extractIPv6(entry)
-		if ip == nil {
-			continue
+// browseThreadBorderRouters continuously browses for Thread Border Routers using zeroconf.
+func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
+	browseService("_meshcop._udp", done, func(entry *zeroconf.ServiceEntry) {
+		ips := extractIPv6s(entry)
+		if len(ips) == 0 {
+			return
 		}
-		allIPs[entry.Name] = appendUnique(allIPs[entry.Name], ip)
-	}
-
-	var routers []ThreadBorderRouter
-	for name, ips := range allIPs {
-		routers = append(routers, ThreadBorderRouter{
-			Name:      extractRouterName(name),
+		mergeRouters(state, []ThreadBorderRouter{{
+			Name:      extractRouterName(entry.ServiceInstanceName()),
 			IPv6Addrs: ips,
 			LastSeen:  time.Now(),
-		})
+		}})
+	})
+}
+
+// browseService runs a zeroconf Browse loop for the given service type until done is closed.
+// On error it waits 5 seconds before restarting. The handler is called for each entry.
+// The key rule: never close the entries channel — only cancel the context; zeroconf owns it.
+func browseService(service string, done <-chan struct{}, handler func(*zeroconf.ServiceEntry)) {
+	for {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// Stop browsing when done is closed.
+		go func() {
+			select {
+			case <-done:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+
+		iface := getMDNSInterface()
+		var opts []zeroconf.ClientOption
+		if iface != nil {
+			opts = append(opts, zeroconf.SelectIfaces([]net.Interface{*iface}))
+		}
+
+		resolver, err := zeroconf.NewResolver(opts...)
+		if err != nil {
+			cancel()
+			logWarn("mDNS browse %s: failed to create resolver: %v — retrying in 5s", service, err)
+			select {
+			case <-done:
+				return
+			case <-time.After(5 * time.Second):
+				continue
+			}
+		}
+
+		// zeroconf owns entries and closes it when ctx is cancelled. Never close it here.
+		entries := make(chan *zeroconf.ServiceEntry)
+		go func() {
+			for entry := range entries {
+				handler(entry)
+			}
+		}()
+
+		if err := resolver.Browse(ctx, service, "local.", entries); err != nil {
+			cancel()
+			logWarn("mDNS browse %s: error: %v — retrying in 5s", service, err)
+			select {
+			case <-done:
+				return
+			case <-time.After(5 * time.Second):
+				continue
+			}
+		}
+
+		// Browse returned — either context was cancelled (done) or an error.
+		<-ctx.Done()
+		cancel()
+
+		select {
+		case <-done:
+			return
+		default:
+			// Context was cancelled for another reason; restart.
+			logDebug("mDNS browse %s: restarting", service)
+			time.Sleep(5 * time.Second)
+		}
 	}
-	return routers, nil
+}
+
+// extractIPv6s returns all IPv6 addresses from a zeroconf ServiceEntry.
+func extractIPv6s(entry *zeroconf.ServiceEntry) []net.IP {
+	var ips []net.IP
+	for _, ip := range entry.AddrIPv6 {
+		if ip.To4() != nil || ip.To16() == nil {
+			continue
+		}
+		ips = appendUnique(ips, ip)
+	}
+	return ips
 }
 
 // appendUnique appends ip to the slice only if not already present.
@@ -75,70 +131,6 @@ func appendUnique(ips []net.IP, ip net.IP) []net.IP {
 		}
 	}
 	return append(ips, ip)
-}
-
-// queryMDNS performs multiple mDNS queries and returns all entries found.
-// Sending several queries is important because Thread mesh devices can be slow
-// to respond and may miss a single multicast query.
-func queryMDNS(service string, timeout time.Duration) ([]*mdns.ServiceEntry, error) {
-	const rounds = 3
-	seen := make(map[string]bool)
-	var all []*mdns.ServiceEntry
-
-	for i := 0; i < rounds; i++ {
-		entriesCh := make(chan *mdns.ServiceEntry, 64)
-		params := &mdns.QueryParam{
-			Service:   service,
-			Domain:    "local",
-			Timeout:   timeout,
-			Entries:   entriesCh,
-			Interface: getMDNSInterface(),
-		}
-
-		var entries []*mdns.ServiceEntry
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			for e := range entriesCh {
-				if e != nil {
-					entries = append(entries, e)
-				}
-			}
-		}()
-
-		if err := mdns.Query(params); err != nil {
-			return nil, err
-		}
-		close(entriesCh)
-		<-done
-
-		for _, e := range entries {
-			key := fmt.Sprintf("%s|%v|%v", e.Name, e.AddrV6, e.AddrV4)
-			if !seen[key] {
-				seen[key] = true
-				all = append(all, e)
-			}
-		}
-	}
-	return all, nil
-}
-
-// extractIPv6 returns the first routable IPv6 address from an mDNS entry.
-func extractIPv6(entry *mdns.ServiceEntry) net.IP {
-	ip := entry.AddrV6
-	if ip == nil && entry.AddrV6IPAddr != nil {
-		ip = entry.AddrV6IPAddr.IP
-	}
-	if ip == nil {
-		return nil
-	}
-	if ip.To4() != nil {
-		return nil // IPv4-mapped, skip
-	}
-	if ip.To16() == nil {
-		return nil
-	}
-	return ip
 }
 
 // calculateCIDR64 calculates the /64 CIDR block for an IPv6 address.
@@ -155,7 +147,7 @@ func calculateCIDR64(ip net.IP) string {
 	return ""
 }
 
-// extractRouterName extracts the simple router name from its FQDN and unescapes it
+// extractRouterName extracts the simple router name from its FQDN and unescapes it.
 func extractRouterName(fqdn string) string {
 	name := fqdn
 	if idx := strings.Index(fqdn, "."); idx != -1 {

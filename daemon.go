@@ -6,28 +6,16 @@ import (
 	"time"
 )
 
-// monitorMatterDevices performs an initial discovery then polls every 30 seconds.
+// monitorMatterDevices continuously browses for Matter devices using zeroconf.
 func monitorMatterDevices(state *DaemonState, done <-chan struct{}) {
-	devices, err := discoverMatterDevices()
-	if err != nil {
-		logError("Error discovering Matter devices: %v", err)
-	} else {
-		mergeDevices(state, devices)
-		logInfo("Initial Matter device discovery completed: %d devices found", len(devices))
-	}
-	listenForMatterDevices(state, done)
+	logInfo("Starting continuous mDNS browse for Matter devices (_matter._tcp)")
+	browseMatterDevices(state, done)
 }
 
-// monitorThreadBorderRouters performs an initial discovery then polls every 30 seconds.
+// monitorThreadBorderRouters continuously browses for Thread Border Routers using zeroconf.
 func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
-	routers, err := discoverThreadBorderRouters()
-	if err != nil {
-		logError("Error discovering Thread Border Routers: %v", err)
-	} else {
-		mergeRouters(state, routers)
-		logInfo("Initial Thread Border Router discovery completed: %d routers found", len(routers))
-	}
-	listenForThreadBorderRouters(state, done)
+	logInfo("Starting continuous mDNS browse for Thread Border Routers (_meshcop._udp)")
+	browseThreadBorderRouters(state, done)
 }
 
 // displayCurrentState logs the current state and triggers a route sync.

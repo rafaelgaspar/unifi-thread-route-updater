@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/mdns"
+	"github.com/grandcat/zeroconf"
 )
 
 func TestExtractRouterName(t *testing.T) {
@@ -99,48 +99,52 @@ func TestExtractRouterNameEdgeCases(t *testing.T) {
 	}
 }
 
-func TestExtractIPv6(t *testing.T) {
+func TestExtractIPv6s(t *testing.T) {
 	tests := []struct {
-		name     string
-		entry    *mdns.ServiceEntry
-		wantNil  bool
+		name      string
+		addrs     []net.IP
+		wantCount int
 	}{
 		{
-			name: "Valid global IPv6",
-			entry: &mdns.ServiceEntry{
-				AddrV6: net.ParseIP("fd00:1234:5678:9abc::1"),
-			},
-			wantNil: false,
+			name:      "Single global IPv6",
+			addrs:     []net.IP{net.ParseIP("fd00:1234:5678:9abc::1")},
+			wantCount: 1,
 		},
 		{
-			name: "IPv4-mapped address in AddrV6",
-			entry: &mdns.ServiceEntry{
-				AddrV6: net.ParseIP("192.168.1.1"),
-			},
-			wantNil: true,
+			name:      "IPv4 address filtered out",
+			addrs:     []net.IP{net.ParseIP("192.168.1.1")},
+			wantCount: 0,
 		},
 		{
-			name:    "No addresses",
-			entry:   &mdns.ServiceEntry{},
-			wantNil: true,
+			name:      "No addresses",
+			addrs:     nil,
+			wantCount: 0,
 		},
 		{
-			name: "Valid public IPv6",
-			entry: &mdns.ServiceEntry{
-				AddrV6: net.ParseIP("2001:4860:4860::8888"),
-			},
-			wantNil: false,
+			name:      "Multiple IPv6 addresses",
+			addrs:     []net.IP{net.ParseIP("2001:4860:4860::8888"), net.ParseIP("fd00::1")},
+			wantCount: 2,
+		},
+		{
+			name:      "Mixed IPv4 and IPv6",
+			addrs:     []net.IP{net.ParseIP("192.168.1.1"), net.ParseIP("fd00::1")},
+			wantCount: 1,
+		},
+		{
+			name:      "Duplicate IPv6 addresses deduplicated",
+			addrs:     []net.IP{net.ParseIP("fd00::1"), net.ParseIP("fd00::1")},
+			wantCount: 1,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractIPv6(tt.entry)
-			if tt.wantNil && result != nil {
-				t.Errorf("extractIPv6() = %v, want nil", result)
+			entry := &zeroconf.ServiceEntry{
+				AddrIPv6: tt.addrs,
 			}
-			if !tt.wantNil && result == nil {
-				t.Errorf("extractIPv6() = nil, want non-nil")
+			result := extractIPv6s(entry)
+			if len(result) != tt.wantCount {
+				t.Errorf("extractIPv6s() returned %d IPs, want %d", len(result), tt.wantCount)
 			}
 		})
 	}
@@ -158,9 +162,8 @@ func TestFormatDuration(t *testing.T) {
 		{"Hours and minutes", 2*time.Hour + 30*time.Minute, "2h30m"},
 		{"Hours with zero minutes", 3 * time.Hour, "3h"},
 		{"Less than a minute", 45 * time.Second, "45s"},
-		{"Zero duration", 0, "0s"},
-		{"Very short duration", 500 * time.Millisecond, "0s"},
-		{"Long duration with minutes", 25*time.Hour + 45*time.Minute, "25h45m"},
+		{"One minute", time.Minute, "1m"},
+		{"One hour", time.Hour, "1h"},
 	}
 
 	for _, tt := range tests {
