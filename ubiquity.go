@@ -79,6 +79,8 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
 	state.mu.Unlock()
 
+	assignRouteDistances(routesToAdd, currentRoutes)
+
 	if len(routesToAdd) > 0 || len(routesToRemove) > 0 {
 		logInfo("UniFi: route changes +%d -%d", len(routesToAdd), len(routesToRemove))
 	}
@@ -256,26 +258,40 @@ func createHTTPClient(config UbiquityConfig) *http.Client {
 	}
 }
 
-// convertToUbiquityRoutes converts our Route format to Ubiquity format
+// convertToUbiquityRoutes converts our Route format to Ubiquity format.
+// Distance is left as 0 for new routes; callers should call assignRouteDistances
+// after fetching current routes from UniFi to avoid metric collisions.
 func convertToUbiquityRoutes(routes []Route, gatewayDevice string) []UbiquityStaticRoute {
 	var ubiquityRoutes []UbiquityStaticRoute
-
 	for _, route := range routes {
 		cleanRouterName := strings.ReplaceAll(route.RouterName, "\\", "")
 		ubiquityRoutes = append(ubiquityRoutes, UbiquityStaticRoute{
-			Enabled:             true,
-			Name:                fmt.Sprintf("Thread route via %s", cleanRouterName),
-			Type:                "static-route",
-			StaticRouteNexthop:  route.ThreadRouterIPv6,
-			StaticRouteNetwork:  route.CIDR,
-			StaticRouteType:     "nexthop-route",
-			StaticRouteDistance: 1,
-			GatewayType:         "default",
-			GatewayDevice:       gatewayDevice,
+			Enabled:            true,
+			Name:               fmt.Sprintf("Thread route via %s", cleanRouterName),
+			Type:               "static-route",
+			StaticRouteNexthop: route.ThreadRouterIPv6,
+			StaticRouteNetwork: route.CIDR,
+			StaticRouteType:    "nexthop-route",
+			GatewayType:        "default",
+			GatewayDevice:      gatewayDevice,
 		})
 	}
-
 	return ubiquityRoutes
+}
+
+// assignRouteDistances sets StaticRouteDistance on routes that need to be added,
+// picking max(existing distances for that prefix) + 1 to avoid collisions.
+func assignRouteDistances(toAdd []UbiquityStaticRoute, current []UbiquityStaticRoute) {
+	maxDistByPrefix := make(map[string]int)
+	for _, r := range current {
+		if r.StaticRouteDistance > maxDistByPrefix[r.StaticRouteNetwork] {
+			maxDistByPrefix[r.StaticRouteNetwork] = r.StaticRouteDistance
+		}
+	}
+	for i := range toAdd {
+		maxDistByPrefix[toAdd[i].StaticRouteNetwork]++
+		toAdd[i].StaticRouteDistance = maxDistByPrefix[toAdd[i].StaticRouteNetwork]
+	}
 }
 
 // compareRoutesWithGracePeriod compares current and desired routes with grace period consideration
