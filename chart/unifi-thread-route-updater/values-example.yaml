@@ -24,10 +24,10 @@ config:
 secrets:
   # Create a new secret (default behavior)
   create: true
-  
+
   # Ubiquiti router password - CHANGE THIS!
   ubiquitiPassword: "your-secure-password-here"
-  
+
   # Secret name (optional - defaults to {release-name}-thread-route-updater-secrets)
   # When create: false, this should be the name of an existing secret
   secretName: ""

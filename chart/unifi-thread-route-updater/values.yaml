@@ -90,10 +90,10 @@ config:
 secrets:
   # Create a new secret (default behavior)
   create: true
-  
+
   # Ubiquiti router password
   ubiquitiPassword: ""
-  
+
   # Secret name (used for both created and existing secrets)
   secretName: ""
 
