@@ -72,12 +72,17 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 		if err := netConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 			return fmt.Errorf("failed to set read deadline: %v", err)
 		}
-		n, cm, _, err := pc.ReadFrom(buf)
+		n, cm, src, err := pc.ReadFrom(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
 			}
 			return fmt.Errorf("read error: %v", err)
+		}
+
+		srcStr := "<unknown>"
+		if src != nil {
+			srcStr = src.String()
 		}
 
 		// Log every received packet for debugging.
@@ -86,7 +91,7 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 			ifIdx = cm.IfIndex
 		}
 		if n >= 1 {
-			logDebug("ICMPv6 packet received: type=%d len=%d ifIndex=%d", buf[0], n, ifIdx)
+			logDebug("ICMPv6 packet received: type=%d len=%d ifIndex=%d src=%s", buf[0], n, ifIdx, srcStr)
 		}
 
 		// Filter by interface if one is configured.
@@ -114,7 +119,7 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 			continue
 		}
 
-		prefixes := parseRAPrefixes(buf[:n])
+		prefixes := parseRAPrefixes(buf[:n], srcStr)
 		if len(prefixes) == 0 {
 			continue
 		}
@@ -122,7 +127,7 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 		state.mu.Lock()
 		for _, p := range prefixes {
 			if _, known := state.ThreadMeshPrefixes[p]; !known {
-				logInfo("Discovered Thread mesh prefix via RA: %s", p)
+				logInfo("Discovered Thread mesh prefix via RA from %s: %s", srcStr, p)
 			}
 			state.ThreadMeshPrefixes[p] = time.Now()
 		}
@@ -150,7 +155,7 @@ func sendRouterSolicitation(pc *ipv6.PacketConn, iface *net.Interface) error {
 // parseRAPrefixes parses NDP options from an RA packet and returns fd:: CIDR strings.
 // RA packet layout: 16-byte header, then variable-length options.
 // Each option: 1 byte type, 1 byte length (in units of 8 bytes), then data.
-func parseRAPrefixes(pkt []byte) []string {
+func parseRAPrefixes(pkt []byte, src string) []string {
 	if len(pkt) < 16 {
 		return nil
 	}
@@ -165,7 +170,7 @@ func parseRAPrefixes(pkt []byte) []string {
 			break
 		}
 
-		logDebug("RA option: type=%d len=%d", optType, optLen)
+		logDebug("RA from %s: option type=%d len=%d", src, optType, optLen)
 
 		if optType == ndpOptionPrefixInfo && optLen >= 32 {
 			// Prefix Information option (RFC 4861 §6.3.4):
@@ -181,7 +186,7 @@ func parseRAPrefixes(pkt []byte) []string {
 			prefix := net.IP(opts[16:32])
 
 			if len(prefix) == 16 {
-				logDebug("RA prefix option: prefix=%s len=%d ula=%v", prefix.String(), prefixLen, (prefix[0]&0xfe) == 0xfc)
+				logDebug("RA from %s: prefix=%s/%d ula=%v", src, prefix.String(), prefixLen, (prefix[0]&0xfe) == 0xfc)
 				// Only ULA prefixes (fc00::/7 — first byte 0xfc or 0xfd)
 				if (prefix[0]&0xfe) == 0xfc {
 					masked := maskPrefix(prefix, prefixLen)

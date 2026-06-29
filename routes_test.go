@@ -254,7 +254,7 @@ func TestParseRAPrefixes(t *testing.T) {
 
 	pkt := append(raHeader, prefixOpt...)
 
-	prefixes := parseRAPrefixes(pkt)
+	prefixes := parseRAPrefixes(pkt, "test")
 	if len(prefixes) != 1 {
 		t.Fatalf("Expected 1 prefix, got %d: %v", len(prefixes), prefixes)
 	}
@@ -267,14 +267,14 @@ func TestParseRAPrefixes(t *testing.T) {
 		copy(prefixOpt2, prefixOpt)
 		copy(prefixOpt2[16:], net.ParseIP("2001:db8::").To16()) // non-ULA
 		pkt2 := append(raHeader, prefixOpt2...)
-		prefixes2 := parseRAPrefixes(pkt2)
+		prefixes2 := parseRAPrefixes(pkt2, "test")
 		if len(prefixes2) != 0 {
 			t.Errorf("Expected 0 prefixes for non-ULA, got %d", len(prefixes2))
 		}
 	})
 
 	t.Run("Short packet returns no prefixes", func(t *testing.T) {
-		prefixes3 := parseRAPrefixes(raHeader[:8])
+		prefixes3 := parseRAPrefixes(raHeader[:8], "test")
 		if len(prefixes3) != 0 {
 			t.Errorf("Expected 0 prefixes for short packet, got %d", len(prefixes3))
 		}
