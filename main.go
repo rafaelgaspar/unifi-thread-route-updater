@@ -27,7 +27,6 @@ func main() {
 		UbiquityConfig:      config,
 		AddedRoutes:         make(map[string]bool),
 		RouteLastSeen:       make(map[string]time.Time),
-		DeviceExpiration:    config.DeviceExpiration,
 	}
 
 	// Set up signal handling for graceful shutdown

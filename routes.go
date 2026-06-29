@@ -122,7 +122,7 @@ func removeExpiredDevices(state *DaemonState) int {
 	var remaining []DeviceInfo
 	removed := 0
 	for _, device := range state.MatterDevices {
-		if now.Sub(device.LastSeen) > state.DeviceExpiration {
+		if now.Sub(device.LastSeen) > state.UbiquityConfig.DeviceExpiration {
 			logDebug("Removing expired Matter device: %s (%s) - last seen %v ago",
 				device.Name, device.IPv6Addr.String(), now.Sub(device.LastSeen))
 			removed++
@@ -142,7 +142,7 @@ func removeExpiredRouters(state *DaemonState) int {
 	var remaining []ThreadBorderRouter
 	removed := 0
 	for _, router := range state.ThreadBorderRouters {
-		if now.Sub(router.LastSeen) > state.DeviceExpiration {
+		if now.Sub(router.LastSeen) > state.UbiquityConfig.DeviceExpiration {
 			logDebug("Removing expired Thread Border Router: %s (%s) - last seen %v ago",
 				router.Name, router.IPv6Addr.String(), now.Sub(router.LastSeen))
 			removed++

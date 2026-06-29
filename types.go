@@ -49,7 +49,6 @@ type DaemonState struct {
 	UbiquityConfig      UbiquityConfig
 	AddedRoutes         map[string]bool      // Track routes we've added to prevent duplicates
 	RouteLastSeen       map[string]time.Time // Track when each route was last seen
-	DeviceExpiration    time.Duration        // How long to keep devices that haven't been seen
 }
 
 // UbiquityConfig holds configuration for Ubiquity router API
@@ -60,13 +59,23 @@ type UbiquityConfig struct {
 	APIBaseURL       string
 	InsecureSSL      bool
 	Enabled          bool
-	GatewayDevice    string        // MAC address of the gateway device
-	SessionToken     string        // Device token for API requests
-	CSRFToken        string        // CSRF token for API requests
-	SessionCookie    string        // Session cookie for API requests
-	LastLoginTime    int64         // Timestamp of last successful login
-	RouteGracePeriod time.Duration // Grace period before removing routes
-	DeviceExpiration time.Duration // How long to keep devices that haven't been seen
+	GatewayDevice    string
+	CSRFToken        string
+	SessionCookie    string
+	LastLogin        time.Time
+	RouteGracePeriod time.Duration
+	DeviceExpiration time.Duration
+}
+
+// hasValidSession returns true if the session is present and less than 5 minutes old.
+func (c *UbiquityConfig) hasValidSession() bool {
+	return c.SessionCookie != "" && c.CSRFToken != "" && time.Since(c.LastLogin) < 5*time.Minute
+}
+
+// clearSession invalidates the cached session tokens.
+func (c *UbiquityConfig) clearSession() {
+	c.SessionCookie = ""
+	c.CSRFToken = ""
 }
 
 // UbiquityStaticRoute represents a static route in Ubiquity format

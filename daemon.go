@@ -6,63 +6,42 @@ import (
 	"time"
 )
 
-// monitorMatterDevices continuously monitors for Matter devices
+// monitorMatterDevices performs an initial discovery then polls every 30 seconds.
 func monitorMatterDevices(state *DaemonState, done <-chan struct{}) {
-	// Initial discovery
 	devices, err := discoverMatterDevices()
 	if err != nil {
 		logError("Error discovering Matter devices: %v", err)
-	} else if len(devices) > 0 {
-		// Merge initial discovery with existing devices (don't replace)
-		mergeDevices(state, devices)
-		state.LastUpdate = time.Now()
-		logInfo("Initial Matter device discovery completed: %d devices found", len(devices))
-		logDebug("Matter devices discovered: %+v", devices)
 	} else {
-		logInfo("Initial Matter device discovery completed: 0 devices found")
+		mergeDevices(state, devices)
+		logInfo("Initial Matter device discovery completed: %d devices found", len(devices))
 	}
-
-	// Then just listen for announcements (passive monitoring)
 	listenForMatterDevices(state, done)
 }
 
-// monitorThreadBorderRouters continuously monitors for Thread Border Routers
+// monitorThreadBorderRouters performs an initial discovery then polls every 30 seconds.
 func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
-	// Initial discovery
 	routers, err := discoverThreadBorderRouters()
 	if err != nil {
 		logError("Error discovering Thread Border Routers: %v", err)
-	} else if len(routers) > 0 {
-		// Merge initial discovery with existing routers (don't replace)
-		mergeRouters(state, routers)
-		state.LastUpdate = time.Now()
-		logInfo("Initial Thread Border Router discovery completed: %d routers found", len(routers))
-		logDebug("Thread Border Routers discovered: %+v", routers)
 	} else {
-		logInfo("Initial Thread Border Router discovery completed: 0 routers found")
+		mergeRouters(state, routers)
+		logInfo("Initial Thread Border Router discovery completed: %d routers found", len(routers))
 	}
-
-	// Then just listen for announcements (passive monitoring)
 	listenForThreadBorderRouters(state, done)
 }
 
-// displayCurrentState logs the current state of discovered devices and routes
+// displayCurrentState logs the current state and triggers a route sync.
 func displayCurrentState(state *DaemonState) {
 	state.mu.Lock()
 	routes := generateRoutes(state.MatterDevices, state.ThreadBorderRouters)
 	state.Routes = routes
+	nDevices := len(state.MatterDevices)
+	nRouters := len(state.ThreadBorderRouters)
 	state.mu.Unlock()
 
-	// Log current status
-	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d routes detected", 
-		len(state.MatterDevices), len(state.ThreadBorderRouters), len(routes))
+	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d routes detected",
+		nDevices, nRouters, len(routes))
 
-	// Debug logging for detailed device information
-	logDebug("Matter devices: %+v", state.MatterDevices)
-	logDebug("Thread Border Routers: %+v", state.ThreadBorderRouters)
-	logDebug("Generated routes: %+v", routes)
-
-	// Show detected routes
 	if len(routes) > 0 {
 		logInfo("Detected routes: %d routes", len(routes))
 		for _, route := range routes {
@@ -72,77 +51,68 @@ func displayCurrentState(state *DaemonState) {
 		logWarn("No routes detected (no Thread networks found)")
 	}
 
-	// Show configured routes in Ubiquity router if enabled
 	if state.UbiquityConfig.Enabled {
-		// Check if we have valid session tokens and they're not too old
-		currentTime := time.Now().Unix()
-		timeSinceLastLogin := currentTime - state.UbiquityConfig.LastLoginTime
+		logConfiguredRoutes(state, routes)
+		go updateUbiquityRoutes(state, routes)
+	}
+}
 
-		if state.UbiquityConfig.SessionCookie == "" || state.UbiquityConfig.CSRFToken == "" {
-			logDebug("No valid session tokens for route status check, skipping configured routes display")
-		} else if timeSinceLastLogin > 300 { // 5 minutes
-			logDebug("Session tokens expired for route status check, skipping configured routes display")
-		} else {
-			// We have valid tokens, try to get configured routes
-			configuredRoutes, err := getUbiquityStaticRoutes(state.UbiquityConfig)
-			if err != nil {
-				logWarn("Failed to get configured routes from Ubiquity router: %v", err)
-			} else {
-				// Filter to only show Thread routes (routes with our name pattern)
-				threadRoutes := []UbiquityStaticRoute{}
-				for _, route := range configuredRoutes {
-					if strings.Contains(route.Name, "Thread route via") {
-						threadRoutes = append(threadRoutes, route)
-					}
-				}
-				
-				if len(threadRoutes) > 0 {
-					logInfo("Configured routes: %d Thread routes in Ubiquity router", len(threadRoutes))
-					
-					// Check each configured route against detected routes
-					for _, route := range threadRoutes {
-						// Check if this route is still detected
-						stillDetected := false
-						for _, detectedRoute := range routes {
-							if detectedRoute.CIDR == route.StaticRouteNetwork && detectedRoute.ThreadRouterIPv6 == route.StaticRouteNexthop {
-								stillDetected = true
-								break
-							}
-						}
-						
-						if stillDetected {
-							logDebug("Configured route: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
-						} else {
-							// Route is configured but no longer detected - check grace period
-							key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
-							if lastSeen, hasLastSeen := state.RouteLastSeen[key]; hasLastSeen {
-								timeSinceLastSeen := time.Since(lastSeen)
-								if timeSinceLastSeen < state.UbiquityConfig.RouteGracePeriod {
-									remaining := state.UbiquityConfig.RouteGracePeriod - timeSinceLastSeen
-									remainingStr := formatDuration(remaining)
-									logInfo("Route marked for deletion: %s -> %s (%s) - will be removed in %s", 
-										route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name, remainingStr)
-								} else {
-									logWarn("Route overdue for deletion: %s -> %s (%s) - grace period expired", 
-										route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
-								}
-							} else {
-								// Route was never seen before - treat as if it was just seen to give it grace period
-								gracePeriodStr := formatDuration(state.UbiquityConfig.RouteGracePeriod)
-								logInfo("Route marked for deletion: %s -> %s (%s) - will be removed in %s (grace period)", 
-									route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name, gracePeriodStr)
-							}
-						}
-					}
-				} else {
-					logInfo("Configured routes: 0 Thread routes in Ubiquity router")
-				}
-			}
+// logConfiguredRoutes fetches and logs the routes currently programmed on the router.
+func logConfiguredRoutes(state *DaemonState, detectedRoutes []Route) {
+	if !state.UbiquityConfig.hasValidSession() {
+		logDebug("No valid session for route status check, skipping")
+		return
+	}
+
+	configuredRoutes, err := getUbiquityStaticRoutes(state.UbiquityConfig)
+	if err != nil {
+		logWarn("Failed to get configured routes from Ubiquity router: %v", err)
+		return
+	}
+
+	var threadRoutes []UbiquityStaticRoute
+	for _, route := range configuredRoutes {
+		if strings.Contains(route.Name, "Thread route via") {
+			threadRoutes = append(threadRoutes, route)
 		}
 	}
 
-	// Update Ubiquity router if enabled
-	if state.UbiquityConfig.Enabled {
-		go updateUbiquityRoutes(state, routes)
+	logInfo("Configured routes: %d Thread routes in Ubiquity router", len(threadRoutes))
+
+	state.mu.Lock()
+	routeLastSeen := state.RouteLastSeen
+	gracePeriod := state.UbiquityConfig.RouteGracePeriod
+	state.mu.Unlock()
+
+	for _, route := range threadRoutes {
+		stillDetected := false
+		for _, detected := range detectedRoutes {
+			if detected.CIDR == route.StaticRouteNetwork && detected.ThreadRouterIPv6 == route.StaticRouteNexthop {
+				stillDetected = true
+				break
+			}
+		}
+
+		if stillDetected {
+			logDebug("Configured route: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+			continue
+		}
+
+		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+		if lastSeen, seen := routeLastSeen[key]; seen {
+			elapsed := time.Since(lastSeen)
+			if elapsed < gracePeriod {
+				logInfo("Route marked for deletion: %s -> %s (%s) - will be removed in %s",
+					route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name,
+					formatDuration(gracePeriod-elapsed))
+			} else {
+				logWarn("Route overdue for deletion: %s -> %s (%s) - grace period expired",
+					route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+			}
+		} else {
+			logInfo("Route marked for deletion: %s -> %s (%s) - will be removed in %s (grace period)",
+				route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name,
+				formatDuration(gracePeriod))
+		}
 	}
 }
