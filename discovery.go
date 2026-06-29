@@ -42,7 +42,45 @@ func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 			IPv6Addrs: ips,
 			LastSeen:  time.Now(),
 		}})
+		if prefix := extractOMRPrefix(entry.Text); prefix != "" {
+			state.mu.Lock()
+			if _, known := state.ThreadMeshPrefixes[prefix]; !known {
+				logInfo("Discovered Thread mesh prefix from OMR TXT record (%s): %s",
+					extractRouterName(entry.ServiceInstanceName()), prefix)
+			}
+			state.ThreadMeshPrefixes[prefix] = time.Now()
+			state.mu.Unlock()
+		}
 	})
+}
+
+// extractOMRPrefix parses the Thread Off-Mesh Route prefix from _meshcop._udp TXT records.
+// The omr= field is: 1 byte prefix-length, followed by 16 bytes of IPv6 prefix.
+func extractOMRPrefix(txt []string) string {
+	for _, field := range txt {
+		if !strings.HasPrefix(field, "omr=") {
+			continue
+		}
+		val := field[4:]
+		if len(val) < 17 {
+			continue
+		}
+		prefixLen := int(val[0])
+		if prefixLen == 0 || prefixLen > 128 {
+			continue
+		}
+		prefix := net.IP([]byte(val[1:17]))
+		if len(prefix) != 16 {
+			continue
+		}
+		// Only accept ULA prefixes (fc00::/7)
+		if (prefix[0] & 0xfe) != 0xfc {
+			continue
+		}
+		masked := maskPrefix(prefix, prefixLen)
+		return fmt.Sprintf("%s/%d", masked.String(), prefixLen)
+	}
+	return ""
 }
 
 // browseService runs a zeroconf Browse loop for the given service type until done is closed.
