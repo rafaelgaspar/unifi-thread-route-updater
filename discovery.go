@@ -12,7 +12,7 @@ import (
 
 // browseThreadBorderRouters continuously browses for Thread Border Routers using zeroconf.
 func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
-	browseService("_meshcop._udp", done, func(entry *zeroconf.ServiceEntry) {
+	browseService("_meshcop._udp", done, 5*time.Minute, func(entry *zeroconf.ServiceEntry) {
 		ips := extractIPv6s(entry)
 		logDebug("Thread Border Router mDNS entry: name=%s ips=%v txt=%v",
 			entry.ServiceInstanceName(), ips, entry.Text)
@@ -78,17 +78,30 @@ func extractOMRPrefix(txt []string) string {
 
 // browseService runs a zeroconf Browse loop for the given service type until done is closed.
 // On error it waits 5 seconds before restarting. The handler is called for each entry.
+// If refreshInterval > 0, the browse is restarted on that interval to send fresh mDNS queries,
+// which forces devices to re-announce and prevents stale state.
 // The key rule: never close the entries channel — only cancel the context; zeroconf owns it.
-func browseService(service string, done <-chan struct{}, handler func(*zeroconf.ServiceEntry)) {
+func browseService(service string, done <-chan struct{}, refreshInterval time.Duration, handler func(*zeroconf.ServiceEntry)) {
 	for {
 		ctx, cancel := context.WithCancel(context.Background())
 
-		// Stop browsing when done is closed.
+		// Stop browsing when done is closed, or restart after refreshInterval.
 		go func() {
-			select {
-			case <-done:
-				cancel()
-			case <-ctx.Done():
+			if refreshInterval > 0 {
+				select {
+				case <-done:
+					cancel()
+				case <-time.After(refreshInterval):
+					logDebug("mDNS browse %s: periodic refresh", service)
+					cancel()
+				case <-ctx.Done():
+				}
+			} else {
+				select {
+				case <-done:
+					cancel()
+				case <-ctx.Done():
+				}
 			}
 		}()
 
