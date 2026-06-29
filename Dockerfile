@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o thread-route-upda
 FROM alpine:3.24
 
 # Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata libcap
 
 # Create non-root user
 RUN addgroup -g 1001 -S appgroup && \
@@ -35,8 +35,9 @@ WORKDIR /app
 # Copy binary from builder stage
 COPY --from=builder /app/thread-route-updater .
 
-# Change ownership to non-root user
-RUN chown -R appuser:appgroup /app
+# Change ownership to non-root user, grant NET_RAW for ICMPv6 raw socket
+RUN chown -R appuser:appgroup /app && \
+    setcap cap_net_raw+ep /app/thread-route-updater
 
 # Switch to non-root user
 USER appuser
