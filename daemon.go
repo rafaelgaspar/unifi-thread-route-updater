@@ -41,8 +41,18 @@ func displayCurrentState(state *DaemonState) {
 	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d routes detected",
 		nDevices, nRouters, len(routes))
 
+	state.mu.Lock()
+	for _, d := range state.MatterDevices {
+		cidr := calculateCIDR64(d.IPv6Addr)
+		logDebug("Matter device: %s  ip=%s  cidr=%s  routable=%v", d.Name, d.IPv6Addr, cidr, isRoutableCIDR(cidr))
+	}
+	for _, r := range state.ThreadBorderRouters {
+		logDebug("Thread Border Router: %s  ip=%s  cidr=%s  routerRoutable=%v  cidrRoutable=%v",
+			r.Name, r.IPv6Addr, r.CIDR, isRoutableRouterAddress(r.IPv6Addr), isRoutableCIDR(r.CIDR))
+	}
+	state.mu.Unlock()
+
 	if len(routes) > 0 {
-		logInfo("Detected routes: %d routes", len(routes))
 		for _, route := range routes {
 			logDebug("Detected route: %s -> %s (%s)", route.CIDR, route.ThreadRouterIPv6, route.RouterName)
 		}
