@@ -72,28 +72,42 @@ func maskPrefix(ip net.IP, prefixLen int) net.IP {
 // extractOMRPrefix parses the Thread Off-Mesh Route prefix from _meshcop._udp TXT records.
 // The omr= field is: 1 byte prefix-length, followed by ceil(prefixLen/8) prefix bytes.
 // The prefix bytes are not zero-padded to 16 bytes — only significant bytes are included.
+// unescapeDNSTxt decodes DNS master file \DDD decimal escape sequences in a string.
+// miekg/dns stores TXT record values with non-printable bytes escaped as \DDD.
+func unescapeDNSTxt(s string) []byte {
+	buf := make([]byte, 0, len(s))
+	for i := 0; i < len(s); {
+		if s[i] == '\\' && i+3 < len(s) && s[i+1] >= '0' && s[i+1] <= '9' {
+			val := int(s[i+1]-'0')*100 + int(s[i+2]-'0')*10 + int(s[i+3]-'0')
+			if val <= 255 {
+				buf = append(buf, byte(val))
+				i += 4
+				continue
+			}
+		}
+		buf = append(buf, s[i])
+		i++
+	}
+	return buf
+}
+
 func extractOMRPrefix(txt []string) string {
 	for _, field := range txt {
 		if !strings.HasPrefix(field, "omr=") {
 			continue
 		}
-		val := []byte(field[4:])
+		val := unescapeDNSTxt(field[4:])
 		logDebug("extractOMRPrefix: val len=%d bytes=%x", len(val), val)
 		if len(val) < 2 {
-			logDebug("extractOMRPrefix: too short")
 			continue
 		}
 		prefixLen := int(val[0])
-		logDebug("extractOMRPrefix: prefixLen=%d", prefixLen)
 		if prefixLen == 0 || prefixLen > 128 {
-			logDebug("extractOMRPrefix: invalid prefixLen")
 			continue
 		}
-		// Pad to 16 bytes
 		prefix := make(net.IP, 16)
 		copy(prefix, val[1:])
-		logDebug("extractOMRPrefix: prefix=%s ula=%v", prefix.String(), (prefix[0]&0xfe) == 0xfc)
-		// Only accept ULA prefixes (fc00::/7)
+		logDebug("extractOMRPrefix: prefixLen=%d prefix=%s ula=%v", prefixLen, prefix.String(), (prefix[0]&0xfe) == 0xfc)
 		if (prefix[0] & 0xfe) != 0xfc {
 			continue
 		}
