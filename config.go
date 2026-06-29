@@ -26,6 +26,8 @@ func getUbiquityConfig() UbiquityConfig {
 
 	enabled := os.Getenv("UBIQUITY_ENABLED") == "true"
 
+	gatewayDevice := os.Getenv("UBIQUITY_GATEWAY_DEVICE")
+
 	// Parse route grace period from environment variable
 	gracePeriodStr := os.Getenv("ROUTE_GRACE_PERIOD")
 	gracePeriod := 10 * time.Minute // Default: 10 minutes
@@ -55,6 +57,7 @@ func getUbiquityConfig() UbiquityConfig {
 		APIBaseURL:       fmt.Sprintf("https://%s", routerHostname),
 		InsecureSSL:      os.Getenv("UBIQUITY_INSECURE_SSL") == "true",
 		Enabled:          enabled,
+		GatewayDevice:    gatewayDevice,
 		RouteGracePeriod: gracePeriod,
 		DeviceExpiration: deviceExpiration,
 	}

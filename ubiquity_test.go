@@ -21,7 +21,7 @@ func TestConvertToUbiquityRoutes(t *testing.T) {
 		},
 	}
 
-	ubiquityRoutes := convertToUbiquityRoutes(routes)
+	ubiquityRoutes := convertToUbiquityRoutes(routes, "aa:bb:cc:dd:ee:ff")
 
 	if len(ubiquityRoutes) != len(routes) {
 		t.Errorf("Expected %d Ubiquiti routes, got %d", len(routes), len(ubiquityRoutes))
@@ -54,60 +54,6 @@ func TestConvertToUbiquityRoutes(t *testing.T) {
 			t.Errorf("Expected route name to contain router name '%s', got '%s'",
 				originalRoute.RouterName, ubiquityRoute.Name)
 		}
-	}
-}
-
-// TestCompareRoutes tests the route comparison function
-func TestCompareRoutes(t *testing.T) {
-	current := []UbiquityStaticRoute{
-		{
-			ID:                 "route1",
-			StaticRouteNetwork: "fd00:1234:5678:9abc::/64",
-			StaticRouteNexthop: "fd00:1234:5678:9abc::ff",
-			Name:               "Thread route via Router1",
-		},
-		{
-			ID:                 "route2",
-			StaticRouteNetwork: "fd00:5678:9abc:def0::/64",
-			StaticRouteNexthop: "fd00:5678:9abc:def0::fe",
-			Name:               "Thread route via Router2",
-		},
-	}
-
-	desired := []UbiquityStaticRoute{
-		{
-			StaticRouteNetwork: "fd00:1234:5678:9abc::/64",
-			StaticRouteNexthop: "fd00:1234:5678:9abc::ff",
-			Name:               "Thread route via Router1",
-		},
-		{
-			StaticRouteNetwork: "fd00:9999:8888:7777::/64",
-			StaticRouteNexthop: "fd00:9999:8888:7777::aa",
-			Name:               "Thread route via Router3",
-		},
-	}
-
-	toAdd, toDelete := compareRoutes(current, desired)
-
-	// Should add 1 new route (Router3)
-	if len(toAdd) != 1 {
-		t.Errorf("Expected 1 route to add, got %d", len(toAdd))
-	}
-
-	// Should delete 1 route (Router2)
-	if len(toDelete) != 1 {
-		t.Errorf("Expected 1 route to delete, got %d", len(toDelete))
-	}
-
-	// Check the route to add
-	if toAdd[0].StaticRouteNetwork != "fd00:9999:8888:7777::/64" {
-		t.Errorf("Expected route to add with network fd00:9999:8888:7777::/64, got %s",
-			toAdd[0].StaticRouteNetwork)
-	}
-
-	// Check the route to delete
-	if toDelete[0].ID != "route2" {
-		t.Errorf("Expected route to delete with ID route2, got %s", toDelete[0].ID)
 	}
 }
 

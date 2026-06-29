@@ -1,4 +1,4 @@
-module ubiquity-thread-route-updater
+module unifi-thread-route-updater
 
 go 1.25
 

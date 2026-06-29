@@ -116,6 +116,8 @@ func periodicRefresh(state *DaemonState, done <-chan struct{}) {
 
 // removeExpiredDevices removes devices that haven't been seen for the expiration period
 func removeExpiredDevices(state *DaemonState) int {
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	now := time.Now()
 	var remaining []DeviceInfo
 	removed := 0
@@ -134,6 +136,8 @@ func removeExpiredDevices(state *DaemonState) int {
 
 // removeExpiredRouters removes routers that haven't been seen for the expiration period
 func removeExpiredRouters(state *DaemonState) int {
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	now := time.Now()
 	var remaining []ThreadBorderRouter
 	removed := 0
@@ -152,6 +156,8 @@ func removeExpiredRouters(state *DaemonState) int {
 
 // mergeDevices merges newly discovered devices with existing ones
 func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	for _, newDevice := range newDevices {
 		found := false
 		for i, existing := range state.MatterDevices {
@@ -171,6 +177,8 @@ func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
 
 // mergeRouters merges newly discovered routers with existing ones
 func mergeRouters(state *DaemonState, newRouters []ThreadBorderRouter) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
 	for _, newRouter := range newRouters {
 		found := false
 		for i, existing := range state.ThreadBorderRouters {

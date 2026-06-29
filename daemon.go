@@ -48,9 +48,10 @@ func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 
 // displayCurrentState logs the current state of discovered devices and routes
 func displayCurrentState(state *DaemonState) {
-	// Generate current routes
+	state.mu.Lock()
 	routes := generateRoutes(state.MatterDevices, state.ThreadBorderRouters)
 	state.Routes = routes
+	state.mu.Unlock()
 
 	// Log current status
 	logInfo("Status update: %d Matter devices, %d Thread Border Routers, %d routes detected", 

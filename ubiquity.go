@@ -72,9 +72,10 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	}
 
 	// Convert our routes to Ubiquity format
-	desiredRoutes := convertToUbiquityRoutes(routes)
+	desiredRoutes := convertToUbiquityRoutes(routes, state.UbiquityConfig.GatewayDevice)
 
 	// Update last seen time for current desired routes
+	state.mu.Lock()
 	routeUpdateTime := time.Now()
 	for _, route := range desiredRoutes {
 		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
@@ -83,6 +84,7 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 
 	// Find routes to add and remove (with grace period consideration)
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
+	state.mu.Unlock()
 
 	// Show summary if there are changes or if we have routes being tracked
 	if len(routesToAdd) > 0 || len(routesToRemove) > 0 || len(state.RouteLastSeen) > 0 {
@@ -93,14 +95,16 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	}
 
 	// Filter out routes we've already added (in-memory tracking)
+	state.mu.Lock()
 	var newRoutesToAdd []UbiquityStaticRoute
 	for _, route := range routesToAdd {
 		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		if !state.AddedRoutes[key] {
 			newRoutesToAdd = append(newRoutesToAdd, route)
-			state.AddedRoutes[key] = true // Mark as added
+			state.AddedRoutes[key] = true
 		}
 	}
+	state.mu.Unlock()
 	routesToAdd = newRoutesToAdd
 
 	// Add a small delay after adding routes to allow them to be indexed
@@ -118,10 +122,11 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 			// Remove it from our tracking to prevent repeated attempts
 			if strings.Contains(err.Error(), "IdInvalid") {
 				logWarn("Route ID invalid, likely already deleted. Removing from tracking.")
-				// Remove from in-memory tracking
 				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+				state.mu.Lock()
 				delete(state.RouteLastSeen, key)
 				delete(state.AddedRoutes, key)
+				state.mu.Unlock()
 			}
 		} else {
 			logInfo("Successfully deleted route: %s -> %s", route.StaticRouteNetwork, route.StaticRouteNexthop)
@@ -318,14 +323,11 @@ func createHTTPClient(config UbiquityConfig) *http.Client {
 }
 
 // convertToUbiquityRoutes converts our Route format to Ubiquity format
-func convertToUbiquityRoutes(routes []Route) []UbiquityStaticRoute {
+func convertToUbiquityRoutes(routes []Route, gatewayDevice string) []UbiquityStaticRoute {
 	var ubiquityRoutes []UbiquityStaticRoute
 
 	for _, route := range routes {
-		// Remove escaping from router name for cleaner display
 		cleanRouterName := strings.ReplaceAll(route.RouterName, "\\", "")
-
-		// Use the correct Ubiquiti field structure
 		ubiquityRoute := UbiquityStaticRoute{
 			Enabled:            true,
 			Name:               fmt.Sprintf("Thread route via %s", cleanRouterName),
@@ -334,7 +336,7 @@ func convertToUbiquityRoutes(routes []Route) []UbiquityStaticRoute {
 			StaticRouteNetwork: route.CIDR,
 			StaticRouteType:    "nexthop-route",
 			GatewayType:        "default",
-			GatewayDevice:      "1c:0b:8b:12:64:88", // TODO: Get actual gateway device MAC
+			GatewayDevice:      gatewayDevice,
 		}
 		ubiquityRoutes = append(ubiquityRoutes, ubiquityRoute)
 	}
@@ -377,47 +379,6 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 					routeLastSeen[key] = currentTime
 					continue
 				}
-				toRemove = append(toRemove, currentRoute)
-			}
-		}
-	}
-
-	// Find routes to add (in desired but not in current)
-	currentMap := make(map[string]bool)
-	for _, route := range current {
-		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
-		currentMap[key] = true
-	}
-
-	for _, desiredRoute := range desired {
-		key := fmt.Sprintf("%s->%s", desiredRoute.StaticRouteNetwork, desiredRoute.StaticRouteNexthop)
-		if !currentMap[key] {
-			toAdd = append(toAdd, desiredRoute)
-		}
-	}
-
-	return toAdd, toRemove
-}
-
-// compareRoutes compares current and desired routes to find what needs to be added/removed
-// This is the original function kept for backward compatibility
-func compareRoutes(current, desired []UbiquityStaticRoute) ([]UbiquityStaticRoute, []UbiquityStaticRoute) {
-	var toAdd []UbiquityStaticRoute
-	var toRemove []UbiquityStaticRoute
-
-	// Create a map of desired routes for quick lookup
-	desiredMap := make(map[string]UbiquityStaticRoute)
-	for _, route := range desired {
-		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
-		desiredMap[key] = route
-	}
-
-	// Find routes to remove (in current but not in desired)
-	for _, currentRoute := range current {
-		key := fmt.Sprintf("%s->%s", currentRoute.StaticRouteNetwork, currentRoute.StaticRouteNexthop)
-		if _, exists := desiredMap[key]; !exists {
-			// Only remove Thread routes (routes with our name pattern)
-			if strings.Contains(currentRoute.Name, "Thread route via") {
 				toRemove = append(toRemove, currentRoute)
 			}
 		}

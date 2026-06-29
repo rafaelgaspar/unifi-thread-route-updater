@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"sync"
 	"time"
 )
 
@@ -40,6 +41,7 @@ type Route struct {
 
 // DaemonState holds the current state of discovered devices and routers
 type DaemonState struct {
+	mu                  sync.Mutex
 	MatterDevices       []DeviceInfo
 	ThreadBorderRouters []ThreadBorderRouter
 	Routes              []Route
@@ -58,6 +60,7 @@ type UbiquityConfig struct {
 	APIBaseURL       string
 	InsecureSSL      bool
 	Enabled          bool
+	GatewayDevice    string        // MAC address of the gateway device
 	SessionToken     string        // Device token for API requests
 	CSRFToken        string        // CSRF token for API requests
 	SessionCookie    string        // Session cookie for API requests
