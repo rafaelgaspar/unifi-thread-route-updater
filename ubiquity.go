@@ -152,12 +152,13 @@ func getUbiquityStaticRoutes(config UbiquityConfig) ([]UbiquityStaticRoute, erro
 // addUbiquityStaticRoute adds a new static route to the router
 func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) error {
 	client := createHTTPClient(config)
-	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing/static-route", config.APIBaseURL)
+	url := fmt.Sprintf("%s/proxy/network/api/s/default/rest/routing", config.APIBaseURL)
 
 	jsonData, err := json.Marshal(route)
 	if err != nil {
 		return err
 	}
+	logDebug("UniFi: add route payload: %s", string(jsonData))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -173,6 +174,7 @@ func addUbiquityStaticRoute(config UbiquityConfig, route UbiquityStaticRoute) er
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		logDebug("UniFi: add route response: status=%d body=%s", resp.StatusCode, string(body))
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
