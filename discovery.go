@@ -32,6 +32,8 @@ func browseMatterDevices(state *DaemonState, done <-chan struct{}) {
 func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	browseService("_meshcop._udp", done, func(entry *zeroconf.ServiceEntry) {
 		ips := extractIPv6s(entry)
+		logDebug("Thread Border Router mDNS entry: name=%s ips=%v txt=%v",
+			entry.ServiceInstanceName(), ips, entry.Text)
 		if len(ips) == 0 {
 			return
 		}
