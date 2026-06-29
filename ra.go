@@ -46,6 +46,12 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 	iface := getMDNSInterface()
 	logInfo("Listening for ICMPv6 Router Advertisements on %s", ifaceName(iface))
 
+	if err := sendRouterSolicitation(pc, iface); err != nil {
+		logWarn("Failed to send Router Solicitation: %v", err)
+	} else {
+		logDebug("Sent Router Solicitation on %s", ifaceName(iface))
+	}
+
 	buf := make([]byte, 1500)
 	for {
 		select {
@@ -104,6 +110,23 @@ func runRAListener(state *DaemonState, done <-chan struct{}) error {
 		}
 		state.mu.Unlock()
 	}
+}
+
+// sendRouterSolicitation sends an ICMPv6 RS (type 133) to ff02::2 to solicit an
+// immediate Router Advertisement from all routers on the link.
+func sendRouterSolicitation(pc *ipv6.PacketConn, iface *net.Interface) error {
+	// RS: type(133) + code(0) + checksum(0, filled by kernel) + reserved(4 bytes)
+	rs := []byte{133, 0, 0, 0, 0, 0, 0, 0}
+
+	dst := &net.UDPAddr{IP: net.ParseIP("ff02::2")}
+	cm := &ipv6.ControlMessage{HopLimit: 255}
+	if iface != nil {
+		cm.IfIndex = iface.Index
+		dst.Zone = iface.Name
+	}
+
+	_, err := pc.WriteTo(rs, cm, dst)
+	return err
 }
 
 // parseRAPrefixes parses NDP options from an RA packet and returns fd:: CIDR strings.
