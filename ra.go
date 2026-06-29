@@ -200,12 +200,14 @@ func parseRAPrefixes(pkt []byte) []string {
 			prefixLen := int(opts[2])
 			prefix := net.IP(opts[16:32])
 
-			// Only ULA prefixes (fc00::/7 — first byte 0xfc or 0xfd)
-			if len(prefix) == 16 && (prefix[0]&0xfe) == 0xfc {
-				// Mask the prefix to prefixLen bits
-				masked := maskPrefix(prefix, prefixLen)
-				cidr := fmt.Sprintf("%s/%d", masked.String(), prefixLen)
-				prefixes = append(prefixes, cidr)
+			if len(prefix) == 16 {
+				logDebug("RA prefix option: prefix=%s len=%d ula=%v", prefix.String(), prefixLen, (prefix[0]&0xfe) == 0xfc)
+				// Only ULA prefixes (fc00::/7 — first byte 0xfc or 0xfd)
+				if (prefix[0]&0xfe) == 0xfc {
+					masked := maskPrefix(prefix, prefixLen)
+					cidr := fmt.Sprintf("%s/%d", masked.String(), prefixLen)
+					prefixes = append(prefixes, cidr)
+				}
 			}
 		}
 
