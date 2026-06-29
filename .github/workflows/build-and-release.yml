@@ -163,6 +163,7 @@ jobs:
 
   publish-helmchart:
     needs: [build-image, lint-chart, security-scan]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -189,8 +190,9 @@ jobs:
         helm package chart/unifi-thread-route-updater --destination ./packages
         helm push ./packages/unifi-thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
 
-  github-release:
+  release-go-binaries:
     needs: [build-image, lint-chart, security-scan]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
