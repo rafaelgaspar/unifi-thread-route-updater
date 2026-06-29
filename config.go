@@ -6,6 +6,15 @@ import (
 	"time"
 )
 
+// getHomeAssistantConfig returns the Home Assistant configuration from environment variables.
+func getHomeAssistantConfig() HomeAssistantConfig {
+	return HomeAssistantConfig{
+		URL:         os.Getenv("HA_URL"),
+		Token:       os.Getenv("HA_TOKEN"),
+		InsecureSSL: os.Getenv("HA_INSECURE_SSL") == "true",
+	}
+}
+
 // getUbiquityConfig returns the Ubiquity router configuration from environment variables.
 func getUbiquityConfig() UbiquityConfig {
 	routerHostname := envOrDefault("UBIQUITY_ROUTER_HOSTNAME", "unifi.local")

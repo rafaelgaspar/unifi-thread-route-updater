@@ -32,12 +32,20 @@ type Route struct {
 
 // DaemonState holds the current state of discovered routers and Thread mesh prefixes
 type DaemonState struct {
-	mu                  sync.Mutex
-	ThreadBorderRouters []ThreadBorderRouter
-	ThreadMeshPrefixes  map[string]time.Time // fd:: prefixes from TBR omr= TXT records → last seen time
-	UbiquityConfig      UbiquityConfig
-	AddedRoutes         map[string]bool
-	RouteLastSeen       map[string]time.Time
+	mu                   sync.Mutex
+	ThreadBorderRouters  []ThreadBorderRouter
+	ThreadMeshPrefixes   map[string]time.Time // fd:: prefixes from TBR omr= TXT records → last seen time
+	UbiquityConfig       UbiquityConfig
+	HomeAssistantConfig  HomeAssistantConfig
+	AddedRoutes          map[string]bool
+	RouteLastSeen        map[string]time.Time
+}
+
+// HomeAssistantConfig holds configuration for the Home Assistant API
+type HomeAssistantConfig struct {
+	URL         string
+	Token       string
+	InsecureSSL bool
 }
 
 // UbiquityConfig holds configuration for Ubiquity router API

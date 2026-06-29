@@ -53,6 +53,17 @@ spec:
             - name: MDNS_INTERFACE
               value: {{ .Values.config.mdnsInterface | quote }}
             {{- end }}
+            {{- if .Values.config.homeAssistant.url }}
+            - name: HA_URL
+              value: {{ .Values.config.homeAssistant.url | quote }}
+            - name: HA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (include "unifi-thread-route-updater.fullname" .) .Values.secrets.secretName }}
+                  key: ha-token
+            - name: HA_INSECURE_SSL
+              value: {{ .Values.config.homeAssistant.insecureSSL | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8080

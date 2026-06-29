@@ -16,13 +16,15 @@ func main() {
 	logInfo("Press Ctrl+C to stop")
 
 	// Get configuration
-	config := getUbiquityConfig()
+	ubiquityCfg := getUbiquityConfig()
+	haCfg := getHomeAssistantConfig()
 
 	// Create initial state
 	state := &DaemonState{
 		ThreadBorderRouters: []ThreadBorderRouter{},
 		ThreadMeshPrefixes:  make(map[string]time.Time),
-		UbiquityConfig:      config,
+		UbiquityConfig:      ubiquityCfg,
+		HomeAssistantConfig: haCfg,
 		AddedRoutes:         make(map[string]bool),
 		RouteLastSeen:       make(map[string]time.Time),
 	}
@@ -37,6 +39,7 @@ func main() {
 	// Start continuous monitoring
 	go monitorThreadBorderRouters(state, done)
 	go browseMatterDevices(state, done)
+	go pollHomeAssistant(state, done)
 
 	// Periodic refresh every 5 minutes to catch devices that might have been missed
 	go periodicRefresh(state, done)
