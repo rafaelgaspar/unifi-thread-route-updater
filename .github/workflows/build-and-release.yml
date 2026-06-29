@@ -45,9 +45,25 @@ jobs:
       with:
         version: latest
 
-  build-and-push:
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+  lint-chart:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      with:
+        fetch-depth: 0
+
+    - name: Set up Helm
+      uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+
+    - name: Set up chart-testing
+      uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2
+
+    - name: Lint chart
+      run: ct lint --all --config ct.yaml
+
+  build-image:
+    needs: [test, lint-chart]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -60,6 +76,33 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push image (SHA tag)
+      uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  push-image:
+    needs: [build-image, lint-chart]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
     - name: Log in to Container Registry
       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
       with:
@@ -77,19 +120,18 @@ jobs:
           type=semver,pattern={{major}}.{{minor}}
           type=raw,value=latest
 
-    - name: Build and push Docker image
-      uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+    - name: Re-tag SHA image with release tags
+      uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+    - name: Push release tags
+      run: |
+        SOURCE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+        for TAG in $(echo "${{ steps.meta.outputs.tags }}" | tr '\n' ' '); do
+          docker buildx imagetools create --tag "$TAG" "$SOURCE"
+        done
 
   security-scan:
-    needs: build-and-push
+    needs: push-image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -118,8 +160,8 @@ jobs:
       with:
         sarif_file: 'trivy-results.sarif'
 
-  publish-helm:
-    needs: build-and-push
+  publish-helmchart:
+    needs: [build-image, lint-chart]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -147,7 +189,7 @@ jobs:
         helm push ./packages/unifi-thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
 
   github-release:
-    needs: build-and-push
+    needs: [build-image, lint-chart]
     runs-on: ubuntu-latest
     permissions:
       contents: write
