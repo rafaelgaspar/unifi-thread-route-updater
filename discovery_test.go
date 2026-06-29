@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grandcat/zeroconf"
+	"github.com/hashicorp/mdns"
 )
 
 func TestExtractRouterName(t *testing.T) {
@@ -51,7 +51,6 @@ func TestExtractRouterName(t *testing.T) {
 	}
 }
 
-// TestExtractRouterNameEdgeCases tests edge cases for router name extraction
 func TestExtractRouterNameEdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -100,116 +99,68 @@ func TestExtractRouterNameEdgeCases(t *testing.T) {
 	}
 }
 
-// TestExtractIPv6Addresses tests the IPv6 address extraction from mDNS entries
-func TestExtractIPv6Addresses(t *testing.T) {
+func TestExtractIPv6(t *testing.T) {
 	tests := []struct {
 		name     string
-		entry    *zeroconf.ServiceEntry
-		expected int // Expected number of IPv6 addresses
+		entry    *mdns.ServiceEntry
+		wantNil  bool
 	}{
 		{
-			name: "Entry with IPv6 addresses",
-			entry: &zeroconf.ServiceEntry{
-				AddrIPv4: []net.IP{net.ParseIP("192.168.1.1")},
-				AddrIPv6: []net.IP{
-					net.ParseIP("fd00:1234:5678:9abc::1"),
-					net.ParseIP("fe80::1"),
-				},
+			name: "Valid global IPv6",
+			entry: &mdns.ServiceEntry{
+				AddrV6: net.ParseIP("fd00:1234:5678:9abc::1"),
 			},
-			expected: 2,
+			wantNil: false,
 		},
 		{
-			name: "Entry with only IPv4 addresses",
-			entry: &zeroconf.ServiceEntry{
-				AddrIPv4: []net.IP{net.ParseIP("192.168.1.1")},
-				AddrIPv6: []net.IP{},
+			name: "IPv4-mapped address in AddrV6",
+			entry: &mdns.ServiceEntry{
+				AddrV6: net.ParseIP("192.168.1.1"),
 			},
-			expected: 0,
+			wantNil: true,
 		},
 		{
-			name: "Entry with no addresses",
-			entry: &zeroconf.ServiceEntry{
-				AddrIPv4: []net.IP{},
-				AddrIPv6: []net.IP{},
-			},
-			expected: 0,
+			name:    "No addresses",
+			entry:   &mdns.ServiceEntry{},
+			wantNil: true,
 		},
 		{
-			name: "Entry with mixed valid and invalid IPv6",
-			entry: &zeroconf.ServiceEntry{
-				AddrIPv4: []net.IP{},
-				AddrIPv6: []net.IP{
-					net.ParseIP("fd00:1234:5678:9abc::1"),
-					nil, // Invalid IP
-					net.ParseIP("2001:4860:4860::8888"),
-				},
+			name: "Valid public IPv6",
+			entry: &mdns.ServiceEntry{
+				AddrV6: net.ParseIP("2001:4860:4860::8888"),
 			},
-			expected: 2, // Should filter out nil IPs
+			wantNil: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractIPv6Addresses(tt.entry)
-			if len(result) != tt.expected {
-				t.Errorf("extractIPv6Addresses() returned %d addresses, want %d", len(result), tt.expected)
+			result := extractIPv6(tt.entry)
+			if tt.wantNil && result != nil {
+				t.Errorf("extractIPv6() = %v, want nil", result)
+			}
+			if !tt.wantNil && result == nil {
+				t.Errorf("extractIPv6() = nil, want non-nil")
 			}
 		})
 	}
 }
 
-// TestFormatDuration tests the duration formatting function
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
 		name     string
 		duration time.Duration
 		expected string
 	}{
-		{
-			name:     "Seconds only",
-			duration: 30 * time.Second,
-			expected: "30s",
-		},
-		{
-			name:     "Minutes only",
-			duration: 5 * time.Minute,
-			expected: "5m",
-		},
-		{
-			name:     "Hours only",
-			duration: 2 * time.Hour,
-			expected: "2h",
-		},
-		{
-			name:     "Hours and minutes",
-			duration: 2*time.Hour + 30*time.Minute,
-			expected: "2h30m",
-		},
-		{
-			name:     "Hours with zero minutes",
-			duration: 3 * time.Hour,
-			expected: "3h",
-		},
-		{
-			name:     "Less than a minute",
-			duration: 45 * time.Second,
-			expected: "45s",
-		},
-		{
-			name:     "Zero duration",
-			duration: 0,
-			expected: "0s",
-		},
-		{
-			name:     "Very short duration",
-			duration: 500 * time.Millisecond,
-			expected: "0s", // Less than 1 second rounds to 0
-		},
-		{
-			name:     "Long duration with minutes",
-			duration: 25*time.Hour + 45*time.Minute,
-			expected: "25h45m",
-		},
+		{"Seconds only", 30 * time.Second, "30s"},
+		{"Minutes only", 5 * time.Minute, "5m"},
+		{"Hours only", 2 * time.Hour, "2h"},
+		{"Hours and minutes", 2*time.Hour + 30*time.Minute, "2h30m"},
+		{"Hours with zero minutes", 3 * time.Hour, "3h"},
+		{"Less than a minute", 45 * time.Second, "45s"},
+		{"Zero duration", 0, "0s"},
+		{"Very short duration", 500 * time.Millisecond, "0s"},
+		{"Long duration with minutes", 25*time.Hour + 45*time.Minute, "25h45m"},
 	}
 
 	for _, tt := range tests {
