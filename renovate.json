@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":label(renovate)",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "Europe/Berlin",
+  "dependencyDashboard": true,
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major", "minor", "patch", "digest"],
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["pin"],
+      "groupName": "GitHub Actions pin digests",
+      "groupSlug": "github-actions-pin"
+    }
+  ],
+  "prHourlyLimit": 0,
+  "commitMessagePrefix": "chore(deps):",
+  "commitMessageAction": "update"
+}
