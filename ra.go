@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"net"
-	"os"
-	"syscall"
 	"time"
 
 	"golang.org/x/net/ipv6"
@@ -33,32 +31,12 @@ func listenForRouterAdvertisements(state *DaemonState, done <-chan struct{}) {
 }
 
 func runRAListener(state *DaemonState, done <-chan struct{}) error {
-	// Open raw ICMPv6 socket manually so we can set SO_BINDTODEVICE before
-	// handing it to ipv6.PacketConn.
-	fd, err := syscall.Socket(syscall.AF_INET6, syscall.SOCK_RAW, syscall.IPPROTO_ICMPV6)
-	if err != nil {
-		return fmt.Errorf("failed to open ICMPv6 socket: %v", err)
-	}
-
 	iface := getMDNSInterface()
 	logInfo("Listening for ICMPv6 Router Advertisements on %s", ifaceName(iface))
 
-	// Bind to the specific interface so the kernel delivers multicast packets
-	// (like RAs) that it would otherwise only handle internally.
-	if iface != nil {
-		if err := syscall.SetsockoptString(fd, syscall.SOL_SOCKET, syscall.SO_BINDTODEVICE, iface.Name); err != nil {
-			syscall.Close(fd) //nolint:errcheck
-			return fmt.Errorf("SO_BINDTODEVICE failed: %v", err)
-		}
-		logDebug("Bound raw socket to %s via SO_BINDTODEVICE", iface.Name)
-	}
-
-	// Wrap fd in a net.PacketConn via os.File so ipv6.PacketConn can use it.
-	f := os.NewFile(uintptr(fd), "icmpv6")
-	netConn, err := net.FilePacketConn(f)
-	f.Close() //nolint:errcheck
+	netConn, err := openICMPv6Socket(iface)
 	if err != nil {
-		return fmt.Errorf("FilePacketConn failed: %v", err)
+		return err
 	}
 	defer netConn.Close() //nolint:errcheck
 
