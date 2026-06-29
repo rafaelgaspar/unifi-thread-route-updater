@@ -6,20 +6,27 @@ import (
 )
 
 // generateRoutes generates routing entries from discovered devices and routers.
+// Each device may have multiple IPv6 addresses (Thread mesh fd:: and LAN 2a02::).
+// Each router may also have multiple IPs. We generate a route for every
+// (device CIDR, routable router IP) pair where the CIDRs differ.
 func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route {
 	routeMap := make(map[string]Route)
 
 	deviceCIDRs := make(map[string]bool)
 	for _, device := range devices {
-		if cidr := calculateCIDR64(device.IPv6Addr); cidr != "" && isRoutableCIDR(cidr) {
-			deviceCIDRs[cidr] = true
+		for _, ip := range device.IPv6Addrs {
+			if cidr := calculateCIDR64(ip); cidr != "" && isRoutableCIDR(cidr) {
+				deviceCIDRs[cidr] = true
+			}
 		}
 	}
 
 	routerCIDRs := make(map[string]bool)
 	for _, router := range routers {
-		if router.CIDR != "" && isRoutableCIDR(router.CIDR) {
-			routerCIDRs[router.CIDR] = true
+		for _, ip := range router.IPv6Addrs {
+			if cidr := calculateCIDR64(ip); cidr != "" && isRoutableCIDR(cidr) {
+				routerCIDRs[cidr] = true
+			}
 		}
 	}
 
@@ -28,12 +35,14 @@ func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route 
 			continue
 		}
 		for _, router := range routers {
-			if isRoutableRouterAddress(router.IPv6Addr) {
-				key := fmt.Sprintf("%s->%s", deviceCIDR, router.IPv6Addr.String())
-				routeMap[key] = Route{
-					CIDR:             deviceCIDR,
-					ThreadRouterIPv6: router.IPv6Addr.String(),
-					RouterName:       router.Name,
+			for _, ip := range router.IPv6Addrs {
+				if isRoutableRouterAddress(ip) {
+					key := fmt.Sprintf("%s->%s", deviceCIDR, ip.String())
+					routeMap[key] = Route{
+						CIDR:             deviceCIDR,
+						ThreadRouterIPv6: ip.String(),
+						RouterName:       router.Name,
+					}
 				}
 			}
 		}
@@ -108,8 +117,8 @@ func removeExpiredDevices(state *DaemonState) int {
 	removed := 0
 	for _, device := range state.MatterDevices {
 		if now.Sub(device.LastSeen) > state.UbiquityConfig.DeviceExpiration {
-			logDebug("Removing expired Matter device: %s (%s) - last seen %v ago",
-				device.Name, device.IPv6Addr.String(), now.Sub(device.LastSeen))
+			logDebug("Removing expired Matter device: %s %v - last seen %v ago",
+				device.Name, device.IPv6Addrs, now.Sub(device.LastSeen))
 			removed++
 		} else {
 			remaining = append(remaining, device)
@@ -128,8 +137,8 @@ func removeExpiredRouters(state *DaemonState) int {
 	removed := 0
 	for _, router := range state.ThreadBorderRouters {
 		if now.Sub(router.LastSeen) > state.UbiquityConfig.DeviceExpiration {
-			logDebug("Removing expired Thread Border Router: %s (%s) - last seen %v ago",
-				router.Name, router.IPv6Addr.String(), now.Sub(router.LastSeen))
+			logDebug("Removing expired Thread Border Router: %s %v - last seen %v ago",
+				router.Name, router.IPv6Addrs, now.Sub(router.LastSeen))
 			removed++
 		} else {
 			remaining = append(remaining, router)
@@ -139,44 +148,54 @@ func removeExpiredRouters(state *DaemonState) int {
 	return removed
 }
 
-// mergeDevices merges newly discovered devices with existing ones.
+// mergeDevices merges newly discovered devices with existing ones, accumulating IPs per device.
 func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	now := time.Now()
 	for _, newDevice := range newDevices {
 		found := false
 		for i, existing := range state.MatterDevices {
-			if existing.Name == newDevice.Name && existing.IPv6Addr.Equal(newDevice.IPv6Addr) {
-				state.MatterDevices[i] = newDevice
+			if existing.Name == newDevice.Name {
+				state.MatterDevices[i].LastSeen = now
+				for _, ip := range newDevice.IPv6Addrs {
+					state.MatterDevices[i].IPv6Addrs = appendUnique(state.MatterDevices[i].IPv6Addrs, ip)
+				}
+				logDebug("Updated existing Matter device: %s %v", newDevice.Name, state.MatterDevices[i].IPv6Addrs)
 				found = true
-				logDebug("Updated existing Matter device: %s (%s)", newDevice.Name, newDevice.IPv6Addr.String())
 				break
 			}
 		}
 		if !found {
+			newDevice.LastSeen = now
 			state.MatterDevices = append(state.MatterDevices, newDevice)
-			logDebug("Added new Matter device: %s (%s)", newDevice.Name, newDevice.IPv6Addr.String())
+			logDebug("Added new Matter device: %s %v", newDevice.Name, newDevice.IPv6Addrs)
 		}
 	}
 }
 
-// mergeRouters merges newly discovered routers with existing ones.
+// mergeRouters merges newly discovered routers with existing ones, accumulating IPs per router.
 func mergeRouters(state *DaemonState, newRouters []ThreadBorderRouter) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	now := time.Now()
 	for _, newRouter := range newRouters {
 		found := false
 		for i, existing := range state.ThreadBorderRouters {
-			if existing.Name == newRouter.Name && existing.IPv6Addr.Equal(newRouter.IPv6Addr) {
-				state.ThreadBorderRouters[i] = newRouter
+			if existing.Name == newRouter.Name {
+				state.ThreadBorderRouters[i].LastSeen = now
+				for _, ip := range newRouter.IPv6Addrs {
+					state.ThreadBorderRouters[i].IPv6Addrs = appendUnique(state.ThreadBorderRouters[i].IPv6Addrs, ip)
+				}
+				logDebug("Updated existing Thread Border Router: %s %v", newRouter.Name, state.ThreadBorderRouters[i].IPv6Addrs)
 				found = true
-				logDebug("Updated existing Thread Border Router: %s (%s)", newRouter.Name, newRouter.IPv6Addr.String())
 				break
 			}
 		}
 		if !found {
+			newRouter.LastSeen = now
 			state.ThreadBorderRouters = append(state.ThreadBorderRouters, newRouter)
-			logDebug("Added new Thread Border Router: %s (%s)", newRouter.Name, newRouter.IPv6Addr.String())
+			logDebug("Added new Thread Border Router: %s %v", newRouter.Name, newRouter.IPv6Addrs)
 		}
 	}
 }

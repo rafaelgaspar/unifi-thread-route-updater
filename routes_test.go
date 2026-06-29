@@ -6,39 +6,35 @@ import (
 )
 
 func TestGenerateRoutes(t *testing.T) {
-	// Test data - devices and routers in different CIDRs to generate routes
 	devices := []DeviceInfo{
 		{
-			Name:     "Device1",
-			IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"), // Different CIDR from routers
+			Name:      "Device1",
+			IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::1")}, // Different CIDR from routers
 		},
 		{
-			Name:     "Device2",
-			IPv6Addr: net.ParseIP("fd00:1111:2222:3333::2"), // Same CIDR as Device1
+			Name:      "Device2",
+			IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::2")}, // Same CIDR as Device1
 		},
 	}
 
 	routers := []ThreadBorderRouter{
 		{
-			Name:     "ThreadRouter1",
-			IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"), // Different CIDR from devices, public IPv6
-			CIDR:     "2001:4860:4860:1234::/64",
+			Name:      "ThreadRouter1",
+			IPv6Addrs: []net.IP{net.ParseIP("2001:4860:4860:1234::ff")}, // Different CIDR from devices, public IPv6
 		},
 		{
-			Name:     "ThreadRouter2",
-			IPv6Addr: net.ParseIP("2001:4860:4860:1234::fe"), // Same CIDR as ThreadRouter1, public IPv6
-			CIDR:     "2001:4860:4860:1234::/64",
+			Name:      "ThreadRouter2",
+			IPv6Addrs: []net.IP{net.ParseIP("2001:4860:4860:1234::fe")}, // Same CIDR as ThreadRouter1, public IPv6
 		},
 	}
 
 	routes := generateRoutes(devices, routers)
 
-	// Should have 2 routes (1 device CIDR × 2 routers, devices in different CIDR from routers)
+	// Should have 2 routes (1 device CIDR × 2 routers)
 	if len(routes) != 2 {
 		t.Errorf("Expected 2 routes, got %d", len(routes))
 	}
 
-	// All routes should have the device CIDR
 	expectedCIDR := "fd00:1111:2222:3333::/64"
 	for _, route := range routes {
 		if route.CIDR != expectedCIDR {
@@ -47,15 +43,13 @@ func TestGenerateRoutes(t *testing.T) {
 	}
 }
 
-// TestGenerateRoutesEdgeCases tests edge cases for route generation
 func TestGenerateRoutesEdgeCases(t *testing.T) {
 	t.Run("No devices", func(t *testing.T) {
 		devices := []DeviceInfo{}
 		routers := []ThreadBorderRouter{
 			{
-				Name:     "Router1",
-				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"),
-				CIDR:     "2001:4860:4860:1234::/64",
+				Name:      "Router1",
+				IPv6Addrs: []net.IP{net.ParseIP("2001:4860:4860:1234::ff")},
 			},
 		}
 
@@ -68,8 +62,8 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 	t.Run("No routers", func(t *testing.T) {
 		devices := []DeviceInfo{
 			{
-				Name:     "Device1",
-				IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::1"),
+				Name:      "Device1",
+				IPv6Addrs: []net.IP{net.ParseIP("fd00:1234:5678:9abc::1")},
 			},
 		}
 		routers := []ThreadBorderRouter{}
@@ -83,20 +77,18 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 	t.Run("Devices and routers in different CIDRs", func(t *testing.T) {
 		devices := []DeviceInfo{
 			{
-				Name:     "Device1",
-				IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::1"),
+				Name:      "Device1",
+				IPv6Addrs: []net.IP{net.ParseIP("fd00:1234:5678:9abc::1")},
 			},
 		}
 		routers := []ThreadBorderRouter{
 			{
-				Name:     "Router1",
-				IPv6Addr: net.ParseIP("2001:4860:4860:5678::ff"),
-				CIDR:     "2001:4860:4860:5678::/64",
+				Name:      "Router1",
+				IPv6Addrs: []net.IP{net.ParseIP("2001:4860:4860:5678::ff")},
 			},
 		}
 
 		routes := generateRoutes(devices, routers)
-		// Should have 1 route (device CIDR -> router)
 		if len(routes) != 1 {
 			t.Errorf("Expected 1 route with devices and routers in different CIDRs, got %d", len(routes))
 		}
@@ -104,30 +96,13 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 
 	t.Run("Multiple devices in same CIDR with multiple routers", func(t *testing.T) {
 		devices := []DeviceInfo{
-			{
-				Name:     "Device1",
-				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"), // Different CIDR from routers
-			},
-			{
-				Name:     "Device2",
-				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::2"), // Same CIDR as Device1
-			},
-			{
-				Name:     "Device3",
-				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::3"), // Same CIDR as Device1
-			},
+			{Name: "Device1", IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::1")}},
+			{Name: "Device2", IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::2")}},
+			{Name: "Device3", IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::3")}},
 		}
 		routers := []ThreadBorderRouter{
-			{
-				Name:     "Router1",
-				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"), // Different CIDR from devices, public IPv6
-				CIDR:     "2001:4860:4860:1234::/64",
-			},
-			{
-				Name:     "Router2",
-				IPv6Addr: net.ParseIP("2001:4860:4860:1234::fe"), // Same CIDR as Router1, public IPv6
-				CIDR:     "2001:4860:4860:1234::/64",
-			},
+			{Name: "Router1", IPv6Addrs: []net.IP{net.ParseIP("2001:4860:4860:1234::ff")}},
+			{Name: "Router2", IPv6Addrs: []net.IP{net.ParseIP("2001:4860:4860:1234::fe")}},
 		}
 
 		routes := generateRoutes(devices, routers)
@@ -136,7 +111,6 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 			t.Errorf("Expected %d routes, got %d", expected, len(routes))
 		}
 
-		// Verify all routes have correct structure
 		for _, route := range routes {
 			if route.CIDR != "fd00:1111:2222:3333::/64" {
 				t.Errorf("Expected CIDR fd00:1111:2222:3333::/64, got %s", route.CIDR)
@@ -151,25 +125,41 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 	})
 }
 
-// TestGenerateRoutesEdgeCasesAdvanced tests more edge cases for route generation
 func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
-	t.Run("Devices with invalid IPv6 addresses", func(t *testing.T) {
+	t.Run("Device with multiple IPs including Thread mesh fd:: address", func(t *testing.T) {
 		devices := []DeviceInfo{
 			{
-				Name:     "Device1",
-				IPv6Addr: nil, // Invalid IP
-			},
-			{
-				Name:     "Device2",
-				IPv6Addr: net.ParseIP("192.168.1.1"), // IPv4 address
+				Name: "Device1",
+				IPv6Addrs: []net.IP{
+					net.ParseIP("2a02:8109:aa22:4181:c629:96ff:feb4:e4ed"), // LAN address
+					net.ParseIP("fd11:2233:4455:6677::1"),                   // Thread mesh address
+				},
 			},
 		}
 		routers := []ThreadBorderRouter{
 			{
-				Name:     "Router1",
-				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"),
-				CIDR:     "2001:4860:4860:1234::/64",
+				Name:      "Router1",
+				IPv6Addrs: []net.IP{net.ParseIP("2a02:8109:aa22:4181:1ce1:5daf:ce99:f16c")}, // LAN address
 			},
+		}
+
+		routes := generateRoutes(devices, routers)
+		// Should generate 1 route: fd11::/64 -> router (LAN CIDR matches router's CIDR, so skipped)
+		if len(routes) != 1 {
+			t.Errorf("Expected 1 route for Thread mesh CIDR, got %d", len(routes))
+		}
+		if len(routes) == 1 && routes[0].CIDR != "fd11:2233:4455:6677::/64" {
+			t.Errorf("Expected Thread mesh CIDR, got %s", routes[0].CIDR)
+		}
+	})
+
+	t.Run("Devices with invalid IPv6 addresses", func(t *testing.T) {
+		devices := []DeviceInfo{
+			{Name: "Device1", IPv6Addrs: nil},
+			{Name: "Device2", IPv6Addrs: []net.IP{net.ParseIP("192.168.1.1")}}, // IPv4
+		}
+		routers := []ThreadBorderRouter{
+			{Name: "Router1", IPv6Addrs: []net.IP{net.ParseIP("2001:4860:4860:1234::ff")}},
 		}
 
 		routes := generateRoutes(devices, routers)
@@ -180,22 +170,11 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 
 	t.Run("Routers with invalid IPv6 addresses", func(t *testing.T) {
 		devices := []DeviceInfo{
-			{
-				Name:     "Device1",
-				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
-			},
+			{Name: "Device1", IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::1")}},
 		}
 		routers := []ThreadBorderRouter{
-			{
-				Name:     "Router1",
-				IPv6Addr: nil, // Invalid IP
-				CIDR:     "2001:4860:4860:1234::/64",
-			},
-			{
-				Name:     "Router2",
-				IPv6Addr: net.ParseIP("192.168.1.1"), // IPv4 address
-				CIDR:     "2001:4860:4860:1234::/64",
-			},
+			{Name: "Router1", IPv6Addrs: nil},
+			{Name: "Router2", IPv6Addrs: []net.IP{net.ParseIP("192.168.1.1")}}, // IPv4
 		}
 
 		routes := generateRoutes(devices, routers)
@@ -206,16 +185,12 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 
 	t.Run("Devices and routers in same CIDR (should not generate routes)", func(t *testing.T) {
 		devices := []DeviceInfo{
-			{
-				Name:     "Device1",
-				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
-			},
+			{Name: "Device1", IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::1")}},
 		}
 		routers := []ThreadBorderRouter{
 			{
-				Name:     "Router1",
-				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"),
-				CIDR:     "fd00:1111:2222:3333::/64", // Same CIDR as devices
+				Name:      "Router1",
+				IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::ff")}, // Same CIDR as device
 			},
 		}
 
@@ -227,21 +202,11 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 
 	t.Run("Non-routable device CIDRs should be filtered out", func(t *testing.T) {
 		devices := []DeviceInfo{
-			{
-				Name:     "Device1",
-				IPv6Addr: net.ParseIP("fe80::1"), // Link-local
-			},
-			{
-				Name:     "Device2",
-				IPv6Addr: net.ParseIP("ff02::1"), // Multicast
-			},
+			{Name: "Device1", IPv6Addrs: []net.IP{net.ParseIP("fe80::1")}},  // Link-local
+			{Name: "Device2", IPv6Addrs: []net.IP{net.ParseIP("ff02::1")}},  // Multicast
 		}
 		routers := []ThreadBorderRouter{
-			{
-				Name:     "Router1",
-				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"),
-				CIDR:     "2001:4860:4860:1234::/64",
-			},
+			{Name: "Router1", IPv6Addrs: []net.IP{net.ParseIP("2001:4860:4860:1234::ff")}},
 		}
 
 		routes := generateRoutes(devices, routers)
@@ -250,24 +215,17 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 		}
 	})
 
-	t.Run("Router with non-routable CIDR but valid IPv6 address should still generate routes", func(t *testing.T) {
+	t.Run("Router with non-routable IP should not generate routes", func(t *testing.T) {
 		devices := []DeviceInfo{
-			{
-				Name:     "Device1",
-				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
-			},
+			{Name: "Device1", IPv6Addrs: []net.IP{net.ParseIP("fd00:1111:2222:3333::1")}},
 		}
 		routers := []ThreadBorderRouter{
-			{
-				Name:     "Router1",
-				IPv6Addr: net.ParseIP("2001:4860:4860:1234::ff"), // Valid public IPv6
-				CIDR:     "fe80::/64",                            // Link-local CIDR (this is just metadata)
-			},
+			{Name: "Router1", IPv6Addrs: []net.IP{net.ParseIP("fe80::1")}}, // Link-local
 		}
 
 		routes := generateRoutes(devices, routers)
-		if len(routes) != 1 {
-			t.Errorf("Expected 1 route with valid router IPv6 address, got %d", len(routes))
+		if len(routes) != 0 {
+			t.Errorf("Expected 0 routes with non-routable router IP, got %d", len(routes))
 		}
 	})
 }
@@ -344,12 +302,6 @@ func TestCalculateCIDR64EdgeCases(t *testing.T) {
 		},
 		{
 			name:       "IPv6 with /128 prefix",
-			ip:         "2001:db8::1",
-			expected:   "2001:db8::/64",
-			shouldFail: false,
-		},
-		{
-			name:       "IPv6 with different prefix length",
 			ip:         "2001:db8::1",
 			expected:   "2001:db8::/64",
 			shouldFail: false,

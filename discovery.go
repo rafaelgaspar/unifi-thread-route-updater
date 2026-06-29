@@ -9,49 +9,72 @@ import (
 	"github.com/hashicorp/mdns"
 )
 
-// discoverMatterDevices discovers Matter devices using mDNS
+// discoverMatterDevices discovers Matter devices using mDNS.
+// hashicorp/mdns emits one ServiceEntry per AAAA record, so the same device
+// may appear multiple times with different IPs. We collect all of them.
 func discoverMatterDevices() ([]DeviceInfo, error) {
 	entries, err := queryMDNS("_matter._tcp", 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("error discovering _matter._tcp: %v", err)
 	}
 
-	var devices []DeviceInfo
+	allIPs := make(map[string][]net.IP)
 	for _, entry := range entries {
 		ip := extractIPv6(entry)
 		if ip == nil {
 			continue
 		}
+		allIPs[entry.Name] = appendUnique(allIPs[entry.Name], ip)
+	}
+
+	var devices []DeviceInfo
+	for name, ips := range allIPs {
 		devices = append(devices, DeviceInfo{
-			Name:     entry.Name,
-			IPv6Addr: ip,
-			LastSeen: time.Now(),
+			Name:      name,
+			IPv6Addrs: ips,
+			LastSeen:  time.Now(),
 		})
 	}
 	return devices, nil
 }
 
-// discoverThreadBorderRouters discovers Thread Border Routers using mDNS
+// discoverThreadBorderRouters discovers Thread Border Routers using mDNS.
+// hashicorp/mdns emits one ServiceEntry per AAAA record, so the same router
+// may appear multiple times with different IPs. We collect all of them.
 func discoverThreadBorderRouters() ([]ThreadBorderRouter, error) {
 	entries, err := queryMDNS("_meshcop._udp", 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("error discovering _meshcop._udp: %v", err)
 	}
 
-	var routers []ThreadBorderRouter
+	allIPs := make(map[string][]net.IP)
 	for _, entry := range entries {
 		ip := extractIPv6(entry)
 		if ip == nil {
 			continue
 		}
+		allIPs[entry.Name] = appendUnique(allIPs[entry.Name], ip)
+	}
+
+	var routers []ThreadBorderRouter
+	for name, ips := range allIPs {
 		routers = append(routers, ThreadBorderRouter{
-			Name:     extractRouterName(entry.Name),
-			IPv6Addr: ip,
-			CIDR:     calculateCIDR64(ip),
-			LastSeen: time.Now(),
+			Name:      extractRouterName(name),
+			IPv6Addrs: ips,
+			LastSeen:  time.Now(),
 		})
 	}
 	return routers, nil
+}
+
+// appendUnique appends ip to the slice only if not already present.
+func appendUnique(ips []net.IP, ip net.IP) []net.IP {
+	for _, existing := range ips {
+		if existing.Equal(ip) {
+			return ips
+		}
+	}
+	return append(ips, ip)
 }
 
 // queryMDNS performs an mDNS query and returns all entries found within the timeout.

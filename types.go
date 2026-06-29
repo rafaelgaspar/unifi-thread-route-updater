@@ -18,17 +18,16 @@ const (
 
 // DeviceInfo represents a discovered Matter device
 type DeviceInfo struct {
-	Name     string
-	IPv6Addr net.IP
-	LastSeen time.Time
+	Name      string
+	IPv6Addrs []net.IP
+	LastSeen  time.Time
 }
 
 // ThreadBorderRouter represents a discovered Thread Border Router
 type ThreadBorderRouter struct {
-	Name     string
-	IPv6Addr net.IP
-	CIDR     string
-	LastSeen time.Time
+	Name      string
+	IPv6Addrs []net.IP
+	LastSeen  time.Time
 }
 
 // Route represents a routing entry
