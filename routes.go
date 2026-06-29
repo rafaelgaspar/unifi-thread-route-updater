@@ -36,6 +36,9 @@ func generateRoutes(meshPrefixes map[string]time.Time, routers []ThreadBorderRou
 
 // runPoller calls fn on every tick until done is closed.
 func runPoller(done <-chan struct{}, interval time.Duration, label string, fn func() error) {
+	if err := fn(); err != nil {
+		logWarn("%s poll failed: %v", label, err)
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
