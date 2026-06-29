@@ -4,8 +4,8 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/rafaelgaspar/thread-route-updater
-  tag: "latest"
+  repository: ghcr.io/rafaelgaspar/unifi-thread-route-updater
+  tag: ""
   pullPolicy: IfNotPresent
 
 # Configuration for the application

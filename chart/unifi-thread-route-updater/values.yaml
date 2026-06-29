@@ -4,9 +4,9 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/rafaelgaspar/thread-route-updater
+  repository: ghcr.io/rafaelgaspar/unifi-thread-route-updater
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: ""
 
 imagePullSecrets: []
 nameOverride: ""
