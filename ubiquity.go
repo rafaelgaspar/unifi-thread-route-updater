@@ -17,34 +17,34 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		return
 	}
 
-	logInfo("Updating Ubiquity router static routes...")
+	logInfo("UniFi: syncing static routes...")
 
 	if !state.UbiquityConfig.hasValidSession() {
-		logInfo("No valid session, authenticating...")
+		logInfo("UniFi: authenticating...")
 		if err := loginToUbiquity(&state.UbiquityConfig); err != nil {
-			logError("Failed to login to Ubiquity router: %v", err)
+			logError("UniFi: login failed: %v", err)
 			return
 		}
 	} else {
-		logDebug("Using existing session (age: %s)", formatDuration(time.Since(state.UbiquityConfig.LastLogin)))
+		logDebug("UniFi: reusing session (age %s)", formatDuration(time.Since(state.UbiquityConfig.LastLogin)))
 	}
 
 	currentRoutes, err := getUbiquityStaticRoutes(state.UbiquityConfig)
 	if err != nil {
-		logError("Failed to get current routes: %v", err)
+		logError("UniFi: failed to get current routes: %v", err)
 		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "AUTHENTICATION_FAILED_LIMIT_REACHED") {
-			logWarn("Rate limit reached, skipping this update cycle...")
+			logWarn("UniFi: rate limit reached, skipping")
 			state.UbiquityConfig.clearSession()
 			return
 		}
 		state.UbiquityConfig.clearSession()
 		if err = loginToUbiquity(&state.UbiquityConfig); err != nil {
-			logError("Failed to re-login to Ubiquity router: %v", err)
+			logError("UniFi: re-login failed: %v", err)
 			return
 		}
 		currentRoutes, err = getUbiquityStaticRoutes(state.UbiquityConfig)
 		if err != nil {
-			logError("Failed to get current routes after re-login: %v", err)
+			logError("UniFi: failed to get routes after re-login: %v", err)
 			return
 		}
 	}
@@ -61,7 +61,7 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	state.mu.Unlock()
 
 	if len(routesToAdd) > 0 || len(routesToRemove) > 0 {
-		logInfo("Route changes: +%d routes, -%d routes", len(routesToAdd), len(routesToRemove))
+		logInfo("UniFi: route changes +%d -%d", len(routesToAdd), len(routesToRemove))
 	}
 
 	state.mu.Lock()
@@ -81,12 +81,12 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	}
 
 	for _, route := range routesToRemove {
-		logInfo("Attempting to delete route: %s -> %s (ID: %s)",
+		logInfo("UniFi: deleting route %s -> %s (id=%s)...",
 			route.StaticRouteNetwork, route.StaticRouteNexthop, route.ID)
 		if err := deleteUbiquityStaticRoute(state.UbiquityConfig, route.ID); err != nil {
-			logError("Failed to delete route %s (ID: %s): %v", route.StaticRouteNetwork, route.ID, err)
+			logError("UniFi: delete failed %s (id=%s): %v", route.StaticRouteNetwork, route.ID, err)
 			if strings.Contains(err.Error(), "IdInvalid") {
-				logWarn("Route ID invalid, likely already deleted. Removing from tracking.")
+				logWarn("UniFi: route id invalid, already deleted")
 				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
 				state.mu.Lock()
 				delete(state.RouteLastSeen, key)
@@ -94,20 +94,20 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 				state.mu.Unlock()
 			}
 		} else {
-			logInfo("Successfully deleted route: %s -> %s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+			logInfo("UniFi: deleted route %s -> %s", route.StaticRouteNetwork, route.StaticRouteNexthop)
 		}
 	}
 
 	for _, route := range routesToAdd {
 		if err := addUbiquityStaticRoute(state.UbiquityConfig, route); err != nil {
-			logError("Failed to add route %s: %v", route.StaticRouteNetwork, err)
+			logError("UniFi: add failed %s: %v", route.StaticRouteNetwork, err)
 		} else {
-			logInfo("Successfully added route: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+			logInfo("UniFi: added route %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 		}
 	}
 
 	if len(routesToAdd) == 0 && len(routesToRemove) == 0 {
-		logDebug("Ubiquity routes are up to date")
+		logDebug("UniFi: routes up to date")
 	}
 }
 
@@ -221,7 +221,7 @@ func applyAuth(req *http.Request, config UbiquityConfig) {
 // closeBody drains and closes the response body, logging any error.
 func closeBody(resp *http.Response) {
 	if err := resp.Body.Close(); err != nil {
-		logWarn("Failed to close response body: %v", err)
+		logWarn("UniFi: failed to close response: %v", err)
 	}
 }
 
@@ -280,7 +280,7 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 				continue // within grace period
 			}
 		} else {
-			logDebug("Route %s -> %s never seen before, giving grace period, not removing",
+			logDebug("UniFi: route %s -> %s not in detected routes, grace period started",
 				cur.StaticRouteNetwork, cur.StaticRouteNexthop)
 			routeLastSeen[key] = now
 			continue

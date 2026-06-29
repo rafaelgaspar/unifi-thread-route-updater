@@ -56,11 +56,11 @@ func runPoller(done <-chan struct{}, interval time.Duration, label string, fn fu
 // periodicRefresh cleans up expired routers and Thread mesh prefixes every 5 minutes.
 func periodicRefresh(state *DaemonState, done <-chan struct{}) {
 	runPoller(done, 5*time.Minute, "expiration cleanup", func() error {
-		logDebug("Performing periodic expiration cleanup")
+		logDebug("Running expiration cleanup")
 		expiredRouters := removeExpiredRouters(state)
 		expiredPrefixes := removeExpiredPrefixes(state)
 		if expiredRouters > 0 || expiredPrefixes > 0 {
-			logInfo("Removed %d expired Thread Border Routers, %d expired Thread mesh prefixes",
+			logInfo("Expiration cleanup: removed %d border routers, %d prefixes",
 				expiredRouters, expiredPrefixes)
 		}
 		return nil
@@ -76,8 +76,7 @@ func removeExpiredRouters(state *DaemonState) int {
 	removed := 0
 	for _, router := range state.ThreadBorderRouters {
 		if now.Sub(router.LastSeen) > state.UbiquityConfig.DeviceExpiration {
-			logDebug("Removing expired Thread Border Router: %s %v - last seen %v ago",
-				router.Name, router.IPv6Addrs, now.Sub(router.LastSeen))
+			logDebug("Expiring Thread Border Router %s: last-seen=%s ago", router.Name, now.Sub(router.LastSeen).Round(time.Second))
 			removed++
 		} else {
 			remaining = append(remaining, router)
@@ -95,7 +94,7 @@ func removeExpiredPrefixes(state *DaemonState) int {
 	removed := 0
 	for prefix, lastSeen := range state.ThreadMeshPrefixes {
 		if now.Sub(lastSeen) > state.UbiquityConfig.RouteGracePeriod {
-			logDebug("Removing expired Thread mesh prefix: %s - last seen %v ago", prefix, now.Sub(lastSeen))
+			logDebug("Expiring Thread mesh prefix %s: last-seen=%s ago", prefix, now.Sub(lastSeen).Round(time.Second))
 			delete(state.ThreadMeshPrefixes, prefix)
 			removed++
 		}
@@ -116,7 +115,7 @@ func mergeRouters(state *DaemonState, newRouters []ThreadBorderRouter) {
 				for _, ip := range newRouter.IPv6Addrs {
 					state.ThreadBorderRouters[i].IPv6Addrs = appendUnique(state.ThreadBorderRouters[i].IPv6Addrs, ip)
 				}
-				logDebug("Updated existing Thread Border Router: %s %v", newRouter.Name, state.ThreadBorderRouters[i].IPv6Addrs)
+				logDebug("Thread Border Router updated: %s %v", newRouter.Name, state.ThreadBorderRouters[i].IPv6Addrs)
 				found = true
 				break
 			}
@@ -124,7 +123,7 @@ func mergeRouters(state *DaemonState, newRouters []ThreadBorderRouter) {
 		if !found {
 			newRouter.LastSeen = now
 			state.ThreadBorderRouters = append(state.ThreadBorderRouters, newRouter)
-			logDebug("Added new Thread Border Router: %s %v", newRouter.Name, newRouter.IPv6Addrs)
+			logDebug("Thread Border Router added: %s %v", newRouter.Name, newRouter.IPv6Addrs)
 		}
 	}
 }

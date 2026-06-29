@@ -8,7 +8,7 @@ import (
 
 // monitorThreadBorderRouters continuously browses for Thread Border Routers using zeroconf.
 func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
-	logInfo("Starting continuous mDNS browse for Thread Border Routers (_meshcop._udp)")
+	logInfo("Starting Thread Border Router discovery...")
 	browseThreadBorderRouters(state, done)
 }
 
@@ -20,28 +20,26 @@ func displayCurrentState(state *DaemonState) {
 	nPrefixes := len(state.ThreadMeshPrefixes)
 	state.mu.Unlock()
 
-	logInfo("Status update: %d Thread Border Routers, %d Thread mesh prefixes, %d routes detected",
-		nRouters, nPrefixes, len(routes))
+	logInfo("Status: %d border routers, %d prefixes, %d routes", nRouters, nPrefixes, len(routes))
 
 	state.mu.Lock()
 	for p, lastSeen := range state.ThreadMeshPrefixes {
-		logDebug("Thread mesh prefix: %s  last seen %v ago", p, time.Since(lastSeen).Round(time.Second))
+		logDebug("Thread mesh prefix: %s last-seen=%s", p, time.Since(lastSeen).Round(time.Second))
 	}
 	for _, r := range state.ThreadBorderRouters {
 		for _, ip := range r.IPv6Addrs {
 			cidr := calculateCIDR64(ip)
-			logDebug("Thread Border Router: %s  ip=%s  cidr=%s  routerRoutable=%v",
-				r.Name, ip, cidr, isRoutableRouterAddress(ip))
+			logDebug("TBR %s: ip=%s cidr=%s routable=%v", r.Name, ip, cidr, isRoutableRouterAddress(ip))
 		}
 	}
 	state.mu.Unlock()
 
 	if len(routes) > 0 {
 		for _, route := range routes {
-			logDebug("Detected route: %s -> %s (%s)", route.CIDR, route.ThreadRouterIPv6, route.RouterName)
+			logDebug("Route detected: %s -> %s (%s)", route.CIDR, route.ThreadRouterIPv6, route.RouterName)
 		}
 	} else {
-		logWarn("No routes detected (no Thread networks found)")
+		logWarn("No routes detected: no Thread networks found")
 	}
 
 	if state.UbiquityConfig.Enabled {
@@ -53,13 +51,13 @@ func displayCurrentState(state *DaemonState) {
 // logConfiguredRoutes fetches and logs the routes currently programmed on the router.
 func logConfiguredRoutes(state *DaemonState, detectedRoutes []Route) {
 	if !state.UbiquityConfig.hasValidSession() {
-		logDebug("No valid session for route status check, skipping")
+		logDebug("Skipping route status check: no valid session")
 		return
 	}
 
 	configuredRoutes, err := getUbiquityStaticRoutes(state.UbiquityConfig)
 	if err != nil {
-		logWarn("Failed to get configured routes from Ubiquity router: %v", err)
+		logWarn("UniFi: failed to get configured routes: %v", err)
 		return
 	}
 
@@ -70,7 +68,7 @@ func logConfiguredRoutes(state *DaemonState, detectedRoutes []Route) {
 		}
 	}
 
-	logInfo("Configured routes: %d Thread routes in Ubiquity router", len(threadRoutes))
+	logInfo("UniFi: %d Thread routes configured", len(threadRoutes))
 
 	state.mu.Lock()
 	routeLastSeen := state.RouteLastSeen
@@ -87,7 +85,7 @@ func logConfiguredRoutes(state *DaemonState, detectedRoutes []Route) {
 		}
 
 		if stillDetected {
-			logDebug("Configured route: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+			logDebug("Route configured: %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 			continue
 		}
 
@@ -95,15 +93,15 @@ func logConfiguredRoutes(state *DaemonState, detectedRoutes []Route) {
 		if lastSeen, seen := routeLastSeen[key]; seen {
 			elapsed := time.Since(lastSeen)
 			if elapsed < gracePeriod {
-				logInfo("Route marked for deletion: %s -> %s (%s) - will be removed in %s",
+				logInfo("Route queued for deletion: %s -> %s (%s), removing in %s",
 					route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name,
 					formatDuration(gracePeriod-elapsed))
 			} else {
-				logWarn("Route overdue for deletion: %s -> %s (%s) - grace period expired",
+				logWarn("Route grace period expired: %s -> %s (%s)",
 					route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
 			}
 		} else {
-			logInfo("Route marked for deletion: %s -> %s (%s) - will be removed in %s (grace period)",
+			logInfo("Route queued for deletion: %s -> %s (%s), removing in %s",
 				route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name,
 				formatDuration(gracePeriod))
 		}

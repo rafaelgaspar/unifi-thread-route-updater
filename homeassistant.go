@@ -49,7 +49,7 @@ func fetchHAThreadPrefixes(state *DaemonState, cfg HomeAssistantConfig) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		logDebug("home assistant thread datasets: endpoint not available (requires OTBR integration)")
+		logDebug("Home Assistant: thread datasets not available (requires OTBR)")
 		return nil
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -68,7 +68,7 @@ func fetchHAThreadPrefixes(state *DaemonState, cfg HomeAssistantConfig) error {
 		}
 		state.mu.Lock()
 		if _, known := state.ThreadMeshPrefixes[prefix]; !known {
-			logInfo("Discovered Thread mesh prefix from Home Assistant: %s", prefix)
+			logInfo("Thread mesh prefix discovered from Home Assistant: %s", prefix)
 		}
 		state.ThreadMeshPrefixes[prefix] = time.Now()
 		state.mu.Unlock()
@@ -81,7 +81,7 @@ func fetchHAThreadPrefixes(state *DaemonState, cfg HomeAssistantConfig) error {
 func parseMeshLocalPrefix(hexDataset string) string {
 	data, err := hex.DecodeString(hexDataset)
 	if err != nil {
-		logDebug("parseMeshLocalPrefix: hex decode error: %v", err)
+		logDebug("Home Assistant: invalid dataset hex: %v", err)
 		return ""
 	}
 	for i := 0; i+1 < len(data); {

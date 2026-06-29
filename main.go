@@ -8,43 +8,32 @@ import (
 )
 
 func main() {
-	// Initialize logging level from environment
 	initLogLevel()
 
-	logInfo("Thread Route Updater Daemon starting...")
-	logInfo("Monitoring for Thread Border Routers via _meshcop._udp")
-	logInfo("Press Ctrl+C to stop")
+	logInfo("Thread Route Updater starting...")
 
-	// Get configuration
-	ubiquityCfg := getUbiquityConfig()
+	config := getUbiquityConfig()
 	haCfg := getHomeAssistantConfig()
 
-	// Create initial state
 	state := &DaemonState{
 		ThreadBorderRouters: []ThreadBorderRouter{},
 		ThreadMeshPrefixes:  make(map[string]time.Time),
-		UbiquityConfig:      ubiquityCfg,
+		UbiquityConfig:      config,
 		HomeAssistantConfig: haCfg,
 		AddedRoutes:         make(map[string]bool),
 		RouteLastSeen:       make(map[string]time.Time),
 	}
 
-	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Create done channel for graceful shutdown
 	done := make(chan struct{})
 
-	// Start continuous monitoring
 	go monitorThreadBorderRouters(state, done)
 	go browseMatterDevices(state, done)
 	go pollHomeAssistant(state, done)
-
-	// Periodic refresh every 5 minutes to catch devices that might have been missed
 	go periodicRefresh(state, done)
 
-	// Status reporting loop (less frequent for daemon mode)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -53,7 +42,7 @@ func main() {
 		case <-ticker.C:
 			displayCurrentState(state)
 		case sig := <-sigChan:
-			logInfo("Received signal %v, shutting down gracefully...", sig)
+			logInfo("Received signal %v, shutting down", sig)
 			close(done)
 			return
 		}

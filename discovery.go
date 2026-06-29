@@ -22,7 +22,7 @@ func browseMatterDevices(state *DaemonState, done <-chan struct{}) {
 				}
 				state.mu.Lock()
 				if _, known := state.ThreadMeshPrefixes[cidr]; !known {
-					logInfo("Discovered Thread mesh prefix from Matter device %s: %s",
+					logInfo("Thread mesh prefix discovered from Matter device %s: %s",
 						extractRouterName(entry.ServiceInstanceName()), cidr)
 				}
 				state.ThreadMeshPrefixes[cidr] = time.Now()
@@ -36,7 +36,7 @@ func browseMatterDevices(state *DaemonState, done <-chan struct{}) {
 func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 	browseService("_meshcop._udp", done, 5*time.Minute, func(entry *zeroconf.ServiceEntry) {
 		ips := extractIPv6s(entry)
-		logDebug("Thread Border Router mDNS entry: name=%s ips=%v txt=%v",
+		logDebug("mDNS _meshcop._udp: name=%s ips=%v txt=%v",
 			entry.ServiceInstanceName(), ips, entry.Text)
 		if len(ips) == 0 {
 			return
@@ -49,7 +49,7 @@ func browseThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 		if prefix := extractOMRPrefix(entry.Text); prefix != "" {
 			state.mu.Lock()
 			if _, known := state.ThreadMeshPrefixes[prefix]; !known {
-				logInfo("Discovered Thread mesh prefix from OMR TXT record (%s): %s",
+				logInfo("Thread mesh prefix discovered from omr= (%s): %s",
 					extractRouterName(entry.ServiceInstanceName()), prefix)
 			}
 			state.ThreadMeshPrefixes[prefix] = time.Now()
@@ -97,7 +97,7 @@ func extractOMRPrefix(txt []string) string {
 			continue
 		}
 		val := unescapeDNSTxt(field[4:])
-		logDebug("extractOMRPrefix: val len=%d bytes=%x", len(val), val)
+		logDebug("omr= decode: len=%d bytes=%x", len(val), val)
 		if len(val) < 2 {
 			continue
 		}
@@ -107,7 +107,7 @@ func extractOMRPrefix(txt []string) string {
 		}
 		prefix := make(net.IP, 16)
 		copy(prefix, val[1:])
-		logDebug("extractOMRPrefix: prefixLen=%d prefix=%s ula=%v", prefixLen, prefix.String(), (prefix[0]&0xfe) == 0xfc)
+		logDebug("omr= decode: prefix-len=%d prefix=%s ula=%v", prefixLen, prefix.String(), (prefix[0]&0xfe) == 0xfc)
 		if (prefix[0] & 0xfe) != 0xfc {
 			continue
 		}
@@ -149,7 +149,7 @@ func browseService(service string, done <-chan struct{}, refreshInterval time.Du
 		resolver, err := zeroconf.NewResolver()
 		if err != nil {
 			cancel()
-			logWarn("mDNS browse %s: failed to create resolver: %v — retrying in 5s", service, err)
+			logWarn("mDNS browse %s: failed to create resolver: %v, retrying in 5s", service, err)
 			select {
 			case <-done:
 				return
@@ -168,7 +168,7 @@ func browseService(service string, done <-chan struct{}, refreshInterval time.Du
 
 		if err := resolver.Browse(ctx, service, "local.", entries); err != nil {
 			cancel()
-			logWarn("mDNS browse %s: error: %v — retrying in 5s", service, err)
+			logWarn("mDNS browse %s: %v, retrying in 5s", service, err)
 			select {
 			case <-done:
 				return
