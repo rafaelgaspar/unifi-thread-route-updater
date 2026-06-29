@@ -34,6 +34,9 @@ func displayCurrentState(state *DaemonState) {
 	for p, lastSeen := range state.ThreadMeshPrefixes {
 		logDebug("Thread mesh prefix: %s  last seen %v ago", p, time.Since(lastSeen).Round(time.Second))
 	}
+	for _, d := range state.MatterDevices {
+		logDebug("Matter device: %s  ips=%v", d.Name, d.IPv6Addrs)
+	}
 	for _, r := range state.ThreadBorderRouters {
 		for _, ip := range r.IPv6Addrs {
 			cidr := calculateCIDR64(ip)
