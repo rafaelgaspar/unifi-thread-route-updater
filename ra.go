@@ -165,6 +165,8 @@ func parseRAPrefixes(pkt []byte) []string {
 			break
 		}
 
+		logDebug("RA option: type=%d len=%d", optType, optLen)
+
 		if optType == ndpOptionPrefixInfo && optLen >= 32 {
 			// Prefix Information option (RFC 4861 §6.3.4):
 			//   1 byte  type (3)
