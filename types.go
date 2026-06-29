@@ -18,10 +18,9 @@ const (
 
 // DeviceInfo represents a discovered Matter device
 type DeviceInfo struct {
-	Name      string
-	IPv6Addr  net.IP
-	Services  []string
-	LastSeen  time.Time
+	Name     string
+	IPv6Addr net.IP
+	LastSeen time.Time
 }
 
 // ThreadBorderRouter represents a discovered Thread Border Router
@@ -44,8 +43,6 @@ type DaemonState struct {
 	mu                  sync.Mutex
 	MatterDevices       []DeviceInfo
 	ThreadBorderRouters []ThreadBorderRouter
-	Routes              []Route
-	LastUpdate          time.Time
 	UbiquityConfig      UbiquityConfig
 	AddedRoutes         map[string]bool      // Track routes we've added to prevent duplicates
 	RouteLastSeen       map[string]time.Time // Track when each route was last seen
@@ -111,7 +108,4 @@ type UbiquityLoginResponse struct {
 	Meta struct {
 		RC string `json:"rc"`
 	} `json:"meta"`
-	Data []struct {
-		XCsrfToken string `json:"x-csrf-token"`
-	} `json:"data"`
 }

@@ -5,22 +5,20 @@ import (
 	"time"
 )
 
-// generateRoutes generates routing entries from discovered devices and routers
+// generateRoutes generates routing entries from discovered devices and routers.
 func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route {
-	var routes []Route
 	routeMap := make(map[string]Route)
 
 	deviceCIDRs := make(map[string]bool)
 	for _, device := range devices {
-		deviceCIDR := calculateCIDR64(device.IPv6Addr)
-		if deviceCIDR != "" && deviceCIDR != "::/64" && isRoutableCIDR(deviceCIDR) {
-			deviceCIDRs[deviceCIDR] = true
+		if cidr := calculateCIDR64(device.IPv6Addr); cidr != "" && isRoutableCIDR(cidr) {
+			deviceCIDRs[cidr] = true
 		}
 	}
 
 	routerCIDRs := make(map[string]bool)
 	for _, router := range routers {
-		if router.CIDR != "" && router.CIDR != "::/64" && isRoutableCIDR(router.CIDR) {
+		if router.CIDR != "" && isRoutableCIDR(router.CIDR) {
 			routerCIDRs[router.CIDR] = true
 		}
 	}
@@ -31,8 +29,8 @@ func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route 
 		}
 		for _, router := range routers {
 			if isRoutableRouterAddress(router.IPv6Addr) {
-				routeKey := fmt.Sprintf("%s->%s", deviceCIDR, router.IPv6Addr.String())
-				routeMap[routeKey] = Route{
+				key := fmt.Sprintf("%s->%s", deviceCIDR, router.IPv6Addr.String())
+				routeMap[key] = Route{
 					CIDR:             deviceCIDR,
 					ThreadRouterIPv6: router.IPv6Addr.String(),
 					RouterName:       router.Name,
@@ -41,28 +39,22 @@ func generateRoutes(devices []DeviceInfo, routers []ThreadBorderRouter) []Route 
 		}
 	}
 
+	routes := make([]Route, 0, len(routeMap))
 	for _, route := range routeMap {
 		routes = append(routes, route)
 	}
 	return routes
 }
 
-// listenForMatterDevices polls for Matter device announcements every 30 seconds.
-func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
-	ticker := time.NewTicker(30 * time.Second)
+// runPoller calls fn on every tick until done is closed.
+func runPoller(done <-chan struct{}, interval time.Duration, label string, fn func() error) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ticker.C:
-			devices, err := discoverMatterDevices()
-			if err != nil {
-				logWarn("Matter device poll failed: %v", err)
-				continue
-			}
-			if len(devices) > 0 {
-				mergeDevices(state, devices)
-				state.LastUpdate = time.Now()
+			if err := fn(); err != nil {
+				logWarn("%s poll failed: %v", label, err)
 			}
 		case <-done:
 			return
@@ -70,51 +62,44 @@ func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
 	}
 }
 
-// listenForThreadBorderRouters polls for Thread Border Router announcements every 30 seconds.
-func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			routers, err := discoverThreadBorderRouters()
-			if err != nil {
-				logWarn("Thread Border Router poll failed: %v", err)
-				continue
-			}
-			if len(routers) > 0 {
-				mergeRouters(state, routers)
-				state.LastUpdate = time.Now()
-			}
-		case <-done:
-			return
+// listenForMatterDevices polls for Matter devices every 30 seconds.
+func listenForMatterDevices(state *DaemonState, done <-chan struct{}) {
+	runPoller(done, 30*time.Second, "Matter device", func() error {
+		devices, err := discoverMatterDevices()
+		if err != nil {
+			return err
 		}
-	}
+		mergeDevices(state, devices)
+		return nil
+	})
+}
+
+// listenForThreadBorderRouters polls for Thread Border Routers every 30 seconds.
+func listenForThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
+	runPoller(done, 30*time.Second, "Thread Border Router", func() error {
+		routers, err := discoverThreadBorderRouters()
+		if err != nil {
+			return err
+		}
+		mergeRouters(state, routers)
+		return nil
+	})
 }
 
 // periodicRefresh cleans up expired devices and routers every 5 minutes.
 func periodicRefresh(state *DaemonState, done <-chan struct{}) {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			logDebug("Performing periodic expiration cleanup")
-			expiredDevices := removeExpiredDevices(state)
-			expiredRouters := removeExpiredRouters(state)
-			if expiredDevices > 0 || expiredRouters > 0 {
-				logInfo("Removed %d expired Matter devices and %d expired Thread Border Routers", expiredDevices, expiredRouters)
-			}
-			state.LastUpdate = time.Now()
-		case <-done:
-			return
+	runPoller(done, 5*time.Minute, "expiration cleanup", func() error {
+		logDebug("Performing periodic expiration cleanup")
+		expiredDevices := removeExpiredDevices(state)
+		expiredRouters := removeExpiredRouters(state)
+		if expiredDevices > 0 || expiredRouters > 0 {
+			logInfo("Removed %d expired Matter devices and %d expired Thread Border Routers", expiredDevices, expiredRouters)
 		}
-	}
+		return nil
+	})
 }
 
-// removeExpiredDevices removes devices that haven't been seen for the expiration period
+// removeExpiredDevices removes devices that haven't been seen for the expiration period.
 func removeExpiredDevices(state *DaemonState) int {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -134,7 +119,7 @@ func removeExpiredDevices(state *DaemonState) int {
 	return removed
 }
 
-// removeExpiredRouters removes routers that haven't been seen for the expiration period
+// removeExpiredRouters removes routers that haven't been seen for the expiration period.
 func removeExpiredRouters(state *DaemonState) int {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -154,7 +139,7 @@ func removeExpiredRouters(state *DaemonState) int {
 	return removed
 }
 
-// mergeDevices merges newly discovered devices with existing ones
+// mergeDevices merges newly discovered devices with existing ones.
 func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -175,7 +160,7 @@ func mergeDevices(state *DaemonState, newDevices []DeviceInfo) {
 	}
 }
 
-// mergeRouters merges newly discovered routers with existing ones
+// mergeRouters merges newly discovered routers with existing ones.
 func mergeRouters(state *DaemonState, newRouters []ThreadBorderRouter) {
 	state.mu.Lock()
 	defer state.mu.Unlock()

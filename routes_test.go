@@ -11,12 +11,10 @@ func TestGenerateRoutes(t *testing.T) {
 		{
 			Name:     "Device1",
 			IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"), // Different CIDR from routers
-			Services: []string{"_matter._tcp"},
 		},
 		{
 			Name:     "Device2",
 			IPv6Addr: net.ParseIP("fd00:1111:2222:3333::2"), // Same CIDR as Device1
-			Services: []string{"_matter._tcp"},
 		},
 	}
 
@@ -72,7 +70,6 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 			{
 				Name:     "Device1",
 				IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::1"),
-				Services: []string{"_matter._tcp"},
 			},
 		}
 		routers := []ThreadBorderRouter{}
@@ -88,7 +85,6 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 			{
 				Name:     "Device1",
 				IPv6Addr: net.ParseIP("fd00:1234:5678:9abc::1"),
-				Services: []string{"_matter._tcp"},
 			},
 		}
 		routers := []ThreadBorderRouter{
@@ -111,17 +107,14 @@ func TestGenerateRoutesEdgeCases(t *testing.T) {
 			{
 				Name:     "Device1",
 				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"), // Different CIDR from routers
-				Services: []string{"_matter._tcp"},
 			},
 			{
 				Name:     "Device2",
 				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::2"), // Same CIDR as Device1
-				Services: []string{"_matter._tcp"},
 			},
 			{
 				Name:     "Device3",
 				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::3"), // Same CIDR as Device1
-				Services: []string{"_matter._tcp"},
 			},
 		}
 		routers := []ThreadBorderRouter{
@@ -165,12 +158,10 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 			{
 				Name:     "Device1",
 				IPv6Addr: nil, // Invalid IP
-				Services: []string{"_matter._tcp"},
 			},
 			{
 				Name:     "Device2",
 				IPv6Addr: net.ParseIP("192.168.1.1"), // IPv4 address
-				Services: []string{"_matter._tcp"},
 			},
 		}
 		routers := []ThreadBorderRouter{
@@ -192,7 +183,6 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 			{
 				Name:     "Device1",
 				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
-				Services: []string{"_matter._tcp"},
 			},
 		}
 		routers := []ThreadBorderRouter{
@@ -219,7 +209,6 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 			{
 				Name:     "Device1",
 				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
-				Services: []string{"_matter._tcp"},
 			},
 		}
 		routers := []ThreadBorderRouter{
@@ -241,12 +230,10 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 			{
 				Name:     "Device1",
 				IPv6Addr: net.ParseIP("fe80::1"), // Link-local
-				Services: []string{"_matter._tcp"},
 			},
 			{
 				Name:     "Device2",
 				IPv6Addr: net.ParseIP("ff02::1"), // Multicast
-				Services: []string{"_matter._tcp"},
 			},
 		}
 		routers := []ThreadBorderRouter{
@@ -268,7 +255,6 @@ func TestGenerateRoutesEdgeCasesAdvanced(t *testing.T) {
 			{
 				Name:     "Device1",
 				IPv6Addr: net.ParseIP("fd00:1111:2222:3333::1"),
-				Services: []string{"_matter._tcp"},
 			},
 		}
 		routers := []ThreadBorderRouter{
@@ -339,9 +325,9 @@ func TestCalculateCIDR64EdgeCases(t *testing.T) {
 		shouldFail bool
 	}{
 		{
-			name:       "IPv4 address returns placeholder",
+			name:       "IPv4 address returns empty string",
 			ip:         "192.168.1.1",
-			expected:   "::/64",
+			expected:   "",
 			shouldFail: false,
 		},
 		{

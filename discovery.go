@@ -25,7 +25,6 @@ func discoverMatterDevices() ([]DeviceInfo, error) {
 		devices = append(devices, DeviceInfo{
 			Name:     entry.Name,
 			IPv6Addr: ip,
-			Services: []string{"_matter._tcp"},
 			LastSeen: time.Now(),
 		})
 	}
@@ -102,22 +101,17 @@ func extractIPv6(entry *mdns.ServiceEntry) net.IP {
 	return ip
 }
 
-// calculateCIDR64 calculates the /64 CIDR block for an IPv6 address
+// calculateCIDR64 calculates the /64 CIDR block for an IPv6 address.
+// Returns "" for nil, IPv4, or unrecognised addresses.
 func calculateCIDR64(ip net.IP) string {
-	if ip == nil {
+	if ip == nil || ip.To4() != nil {
 		return ""
 	}
-
-	if ip.To4() != nil {
-		return "::/64"
-	}
-
 	if ip.To16() != nil {
 		cidr := make(net.IP, 16)
 		copy(cidr, ip[:8])
 		return fmt.Sprintf("%s/64", cidr.String())
 	}
-
 	return ""
 }
 

@@ -34,7 +34,6 @@ func monitorThreadBorderRouters(state *DaemonState, done <-chan struct{}) {
 func displayCurrentState(state *DaemonState) {
 	state.mu.Lock()
 	routes := generateRoutes(state.MatterDevices, state.ThreadBorderRouters)
-	state.Routes = routes
 	nDevices := len(state.MatterDevices)
 	nRouters := len(state.ThreadBorderRouters)
 	state.mu.Unlock()

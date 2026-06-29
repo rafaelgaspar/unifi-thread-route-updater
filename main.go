@@ -22,8 +22,6 @@ func main() {
 	state := &DaemonState{
 		MatterDevices:       []DeviceInfo{},
 		ThreadBorderRouters: []ThreadBorderRouter{},
-		Routes:              []Route{},
-		LastUpdate:          time.Now(),
 		UbiquityConfig:      config,
 		AddedRoutes:         make(map[string]bool),
 		RouteLastSeen:       make(map[string]time.Time),

@@ -5,34 +5,25 @@ import (
 	"time"
 )
 
-// TestMainFunction tests basic functionality that would be in the main function
-// Since the main function is hard to test directly, we test the core components
-// that would be called from main
-func TestMainFunction(t *testing.T) {
-	// Test that we can create a basic DaemonState
+func TestDaemonStateInit(t *testing.T) {
 	state := &DaemonState{
 		MatterDevices:       []DeviceInfo{},
 		ThreadBorderRouters: []ThreadBorderRouter{},
-		Routes:              []Route{},
 		UbiquityConfig:      getUbiquityConfig(),
 		AddedRoutes:         make(map[string]bool),
 		RouteLastSeen:       make(map[string]time.Time),
 	}
 
-	// Basic smoke test - ensure state is properly initialized
 	if state.MatterDevices == nil {
-		t.Error("Expected MatterDevices to be initialized")
+		t.Error("MatterDevices should be initialised")
 	}
 	if state.ThreadBorderRouters == nil {
-		t.Error("Expected ThreadBorderRouters to be initialized")
-	}
-	if state.Routes == nil {
-		t.Error("Expected Routes to be initialized")
+		t.Error("ThreadBorderRouters should be initialised")
 	}
 	if state.AddedRoutes == nil {
-		t.Error("Expected AddedRoutes to be initialized")
+		t.Error("AddedRoutes should be initialised")
 	}
 	if state.RouteLastSeen == nil {
-		t.Error("Expected RouteLastSeen to be initialized")
+		t.Error("RouteLastSeen should be initialised")
 	}
 }

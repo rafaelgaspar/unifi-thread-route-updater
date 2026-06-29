@@ -6,49 +6,11 @@ import (
 	"time"
 )
 
-// getUbiquityConfig returns the Ubiquity router configuration
+// getUbiquityConfig returns the Ubiquity router configuration from environment variables.
 func getUbiquityConfig() UbiquityConfig {
-	// Get configuration from environment variables or use defaults
-	routerHostname := os.Getenv("UBIQUITY_ROUTER_HOSTNAME")
-	if routerHostname == "" {
-		routerHostname = "unifi.local" // Default router hostname
-	}
-
-	username := os.Getenv("UBIQUITY_USERNAME")
-	if username == "" {
-		username = "ubnt" // Default username
-	}
-
-	password := os.Getenv("UBIQUITY_PASSWORD")
-	if password == "" {
-		password = "ubnt" // Default password
-	}
-
-	enabled := os.Getenv("UBIQUITY_ENABLED") == "true"
-
-	gatewayDevice := os.Getenv("UBIQUITY_GATEWAY_DEVICE")
-
-	// Parse route grace period from environment variable
-	gracePeriodStr := os.Getenv("ROUTE_GRACE_PERIOD")
-	gracePeriod := 10 * time.Minute // Default: 10 minutes
-	if gracePeriodStr != "" {
-		if parsed, err := time.ParseDuration(gracePeriodStr); err == nil {
-			gracePeriod = parsed
-		} else {
-			logWarn("Invalid ROUTE_GRACE_PERIOD format '%s', using default 10m", gracePeriodStr)
-		}
-	}
-
-	// Parse device expiration period from environment variable
-	deviceExpirationStr := os.Getenv("DEVICE_EXPIRATION")
-	deviceExpiration := 10 * time.Minute // Default: 10 minutes
-	if deviceExpirationStr != "" {
-		if parsed, err := time.ParseDuration(deviceExpirationStr); err == nil {
-			deviceExpiration = parsed
-		} else {
-			logWarn("Invalid DEVICE_EXPIRATION format '%s', using default 10m", deviceExpirationStr)
-		}
-	}
+	routerHostname := envOrDefault("UBIQUITY_ROUTER_HOSTNAME", "unifi.local")
+	username := envOrDefault("UBIQUITY_USERNAME", "ubnt")
+	password := envOrDefault("UBIQUITY_PASSWORD", "ubnt")
 
 	return UbiquityConfig{
 		RouterHostname:   routerHostname,
@@ -56,9 +18,31 @@ func getUbiquityConfig() UbiquityConfig {
 		Password:         password,
 		APIBaseURL:       fmt.Sprintf("https://%s", routerHostname),
 		InsecureSSL:      os.Getenv("UBIQUITY_INSECURE_SSL") == "true",
-		Enabled:          enabled,
-		GatewayDevice:    gatewayDevice,
-		RouteGracePeriod: gracePeriod,
-		DeviceExpiration: deviceExpiration,
+		Enabled:          os.Getenv("UBIQUITY_ENABLED") == "true",
+		GatewayDevice:    os.Getenv("UBIQUITY_GATEWAY_DEVICE"),
+		RouteGracePeriod: parseDurationEnv("ROUTE_GRACE_PERIOD", 10*time.Minute),
+		DeviceExpiration: parseDurationEnv("DEVICE_EXPIRATION", 10*time.Minute),
 	}
+}
+
+// envOrDefault returns the environment variable value or a fallback if unset.
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// parseDurationEnv parses a duration from an environment variable, falling back to def on error or absence.
+func parseDurationEnv(key string, def time.Duration) time.Duration {
+	s := os.Getenv(key)
+	if s == "" {
+		return def
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		logWarn("Invalid %s format %q, using default %s", key, s, def)
+		return def
+	}
+	return d
 }
