@@ -85,6 +85,8 @@ config:
     hostname: "unifi.local.rafaelgaspar.xyz"
     username: "thread-route-updater"
     insecureSSL: false
+    # Gateway device MAC address (required for adding static routes)
+    gatewayDevice: ""
 
   # Home Assistant configuration (optional — enables Thread prefix discovery via HA API)
   homeAssistant:

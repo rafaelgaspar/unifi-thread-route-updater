@@ -49,6 +49,8 @@ spec:
               value: {{ .Values.config.ubiquiti.insecureSSL | quote }}
             - name: UBIQUITY_ENABLED
               value: {{ .Values.config.ubiquiti.enabled | quote }}
+            - name: UBIQUITY_GATEWAY_DEVICE
+              value: {{ .Values.config.ubiquiti.gatewayDevice | quote }}
             {{- if .Values.config.mdnsInterface }}
             - name: MDNS_INTERFACE
               value: {{ .Values.config.mdnsInterface | quote }}

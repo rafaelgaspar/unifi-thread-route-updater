@@ -49,6 +49,25 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		}
 	}
 
+	// Discover gateway device MAC from existing routes if not already known.
+	if state.UbiquityConfig.GatewayDevice == "" {
+		for _, r := range currentRoutes {
+			if r.GatewayDevice != "" {
+				state.UbiquityConfig.GatewayDevice = r.GatewayDevice
+				logDebug("UniFi: discovered gateway device %s", r.GatewayDevice)
+				break
+			}
+		}
+	}
+	if state.UbiquityConfig.GatewayDevice == "" {
+		if mac, err := fetchGatewayDeviceMAC(state.UbiquityConfig); err != nil {
+			logWarn("UniFi: could not determine gateway device: %v", err)
+		} else {
+			state.UbiquityConfig.GatewayDevice = mac
+			logDebug("UniFi: discovered gateway device %s via device API", mac)
+		}
+	}
+
 	desiredRoutes := convertToUbiquityRoutes(routes, state.UbiquityConfig.GatewayDevice)
 
 	state.mu.Lock()
@@ -244,14 +263,15 @@ func convertToUbiquityRoutes(routes []Route, gatewayDevice string) []UbiquitySta
 	for _, route := range routes {
 		cleanRouterName := strings.ReplaceAll(route.RouterName, "\\", "")
 		ubiquityRoutes = append(ubiquityRoutes, UbiquityStaticRoute{
-			Enabled:            true,
-			Name:               fmt.Sprintf("Thread route via %s", cleanRouterName),
-			Type:               "static-route",
-			StaticRouteNexthop: route.ThreadRouterIPv6,
-			StaticRouteNetwork: route.CIDR,
-			StaticRouteType:    "nexthop-route",
-			GatewayType:        "default",
-			GatewayDevice:      gatewayDevice,
+			Enabled:             true,
+			Name:                fmt.Sprintf("Thread route via %s", cleanRouterName),
+			Type:                "static-route",
+			StaticRouteNexthop:  route.ThreadRouterIPv6,
+			StaticRouteNetwork:  route.CIDR,
+			StaticRouteType:     "nexthop-route",
+			StaticRouteDistance: 1,
+			GatewayType:         "default",
+			GatewayDevice:       gatewayDevice,
 		})
 	}
 
@@ -303,6 +323,40 @@ func compareRoutesWithGracePeriod(current, desired []UbiquityStaticRoute, routeL
 	}
 
 	return toAdd, toRemove
+}
+
+// fetchGatewayDeviceMAC retrieves the gateway device MAC from /stat/device (type=udm).
+func fetchGatewayDeviceMAC(config UbiquityConfig) (string, error) {
+	client := createHTTPClient(config)
+	url := fmt.Sprintf("%s/proxy/network/api/s/default/stat/device", config.APIBaseURL)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	applyAuth(req, config)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer closeBody(resp)
+
+	var result struct {
+		Data []struct {
+			Type string `json:"type"`
+			MAC  string `json:"mac"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	for _, d := range result.Data {
+		if d.Type == "udm" && d.MAC != "" {
+			return d.MAC, nil
+		}
+	}
+	return "", fmt.Errorf("gateway device (type=udm) not found in /stat/device response")
 }
 
 // loginToUbiquity authenticates with the Ubiquity router and gets a session token

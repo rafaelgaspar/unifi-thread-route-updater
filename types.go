@@ -84,6 +84,7 @@ type UbiquityStaticRoute struct {
 	StaticRouteNexthop string `json:"static-route_nexthop"`
 	StaticRouteNetwork string `json:"static-route_network"`
 	StaticRouteType    string `json:"static-route_type"`
+	StaticRouteDistance int   `json:"static-route_distance"`
 	GatewayType        string `json:"gateway_type"`
 	GatewayDevice      string `json:"gateway_device"`
 	SiteID             string `json:"site_id,omitempty"`
