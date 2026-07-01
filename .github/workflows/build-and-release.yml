@@ -41,7 +41,7 @@ jobs:
       run: go test -v ./...
 
     - name: Run linter
-      uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
+      uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
       with:
         version: latest
 
@@ -112,7 +112,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@cf5c088a69634cd13ccddc735d7926162c31f9a6 # master
+      uses: aquasecurity/trivy-action@df678dbccf677bc6937338d569ba0da18964a8cc # master
       with:
         image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
         format: 'sarif'
