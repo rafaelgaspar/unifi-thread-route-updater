@@ -17,6 +17,9 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		return
 	}
 
+	state.routeSyncMu.Lock()
+	defer state.routeSyncMu.Unlock()
+
 	logInfo("UniFi: syncing static routes...")
 
 	if !state.UbiquityConfig.hasValidSession() {
@@ -79,23 +82,12 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
 	state.mu.Unlock()
 
-	assignRouteDistances(routesToAdd, currentRoutes)
+	distances := newDistanceAllocator(currentRoutes)
+	distances.assign(routesToAdd)
 
 	if len(routesToAdd) > 0 || len(routesToRemove) > 0 {
 		logInfo("UniFi: route changes +%d -%d", len(routesToAdd), len(routesToRemove))
 	}
-
-	state.mu.Lock()
-	var newRoutesToAdd []UbiquityStaticRoute
-	for _, route := range routesToAdd {
-		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
-		if !state.AddedRoutes[key] {
-			newRoutesToAdd = append(newRoutesToAdd, route)
-			state.AddedRoutes[key] = true
-		}
-	}
-	state.mu.Unlock()
-	routesToAdd = newRoutesToAdd
 
 	if len(routesToAdd) > 0 {
 		time.Sleep(2 * time.Second)
@@ -116,14 +108,42 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 			}
 		} else {
 			logInfo("UniFi: deleted route %s -> %s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+			key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+			state.mu.Lock()
+			delete(state.AddedRoutes, key)
+			state.mu.Unlock()
 		}
 	}
 
-	for _, route := range routesToAdd {
-		if err := addUbiquityStaticRoute(state.UbiquityConfig, route); err != nil {
+	for i := range routesToAdd {
+		route := routesToAdd[i]
+		for attempt := 0; attempt < 5; attempt++ {
+			err := addUbiquityStaticRoute(state.UbiquityConfig, route)
+			if err == nil {
+				logInfo("UniFi: added route %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+				state.mu.Lock()
+				state.AddedRoutes[key] = true
+				state.mu.Unlock()
+				break
+			}
+			if strings.Contains(err.Error(), "DestinationNetworkExisted") && attempt < 4 {
+				prefix := route.StaticRouteNetwork
+				distances.markUsed(prefix, route.StaticRouteDistance)
+				next, ok := distances.nextFree(prefix)
+				for !ok {
+					distances.count[prefix]++
+					next, ok = distances.nextFree(prefix)
+				}
+				route.StaticRouteDistance = next
+				routesToAdd[i].StaticRouteDistance = next
+				distances.markUsed(prefix, next)
+				logWarn("UniFi: distance collision for %s, retrying with distance %d",
+					prefix, next)
+				continue
+			}
 			logError("UniFi: add failed %s: %v", route.StaticRouteNetwork, err)
-		} else {
-			logInfo("UniFi: added route %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+			break
 		}
 	}
 
@@ -279,18 +299,70 @@ func convertToUbiquityRoutes(routes []Route, gatewayDevice string) []UbiquitySta
 	return ubiquityRoutes
 }
 
-// assignRouteDistances sets StaticRouteDistance on routes that need to be added,
-// picking max(existing distances for that prefix) + 1 to avoid collisions.
-func assignRouteDistances(toAdd []UbiquityStaticRoute, current []UbiquityStaticRoute) {
-	maxDistByPrefix := make(map[string]int)
+// distanceAllocator picks the lowest unused distance in 1..N per destination prefix,
+// where N is the total route count for that prefix (existing + pending adds).
+type distanceAllocator struct {
+	used  map[string]map[int]bool
+	count map[string]int
+}
+
+func newDistanceAllocator(current []UbiquityStaticRoute) *distanceAllocator {
+	a := &distanceAllocator{
+		used:  make(map[string]map[int]bool),
+		count: make(map[string]int),
+	}
+	zeroDist := make(map[string]int)
 	for _, r := range current {
-		if r.StaticRouteDistance > maxDistByPrefix[r.StaticRouteNetwork] {
-			maxDistByPrefix[r.StaticRouteNetwork] = r.StaticRouteDistance
+		prefix := r.StaticRouteNetwork
+		a.count[prefix]++
+		if a.used[prefix] == nil {
+			a.used[prefix] = make(map[int]bool)
+		}
+		if r.StaticRouteDistance > 0 {
+			a.used[prefix][r.StaticRouteDistance] = true
+		} else {
+			zeroDist[prefix]++
 		}
 	}
+	// GET often omits static-route_distance; reserve the lowest slots for those routes.
+	for prefix, zeros := range zeroDist {
+		for z := 0; z < zeros; z++ {
+			if d, ok := a.nextFree(prefix); ok {
+				a.markUsed(prefix, d)
+			}
+		}
+	}
+	return a
+}
+
+func (a *distanceAllocator) markUsed(prefix string, distance int) {
+	if a.used[prefix] == nil {
+		a.used[prefix] = make(map[int]bool)
+	}
+	a.used[prefix][distance] = true
+}
+
+// nextFree returns the lowest unused distance in 1..count[prefix].
+func (a *distanceAllocator) nextFree(prefix string) (int, bool) {
+	for d := 1; d <= a.count[prefix]; d++ {
+		if used := a.used[prefix]; used == nil || !used[d] {
+			return d, true
+		}
+	}
+	return 0, false
+}
+
+func (a *distanceAllocator) assign(toAdd []UbiquityStaticRoute) {
 	for i := range toAdd {
-		maxDistByPrefix[toAdd[i].StaticRouteNetwork]++
-		toAdd[i].StaticRouteDistance = maxDistByPrefix[toAdd[i].StaticRouteNetwork]
+		prefix := toAdd[i].StaticRouteNetwork
+		a.count[prefix]++
+		d, ok := a.nextFree(prefix)
+		if !ok {
+			// Should not happen: N routes should always have a free slot in 1..N.
+			d = a.count[prefix]
+		}
+		a.markUsed(prefix, d)
+		toAdd[i].StaticRouteDistance = d
 	}
 }
 

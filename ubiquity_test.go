@@ -199,6 +199,52 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 	}
 }
 
+// TestDistanceAllocator verifies compact distance assignment in 1..N per prefix.
+func TestDistanceAllocator(t *testing.T) {
+	prefix := "fd36:1fa8:d5a::/64"
+
+	t.Run("empty current, batch of three", func(t *testing.T) {
+		toAdd := []UbiquityStaticRoute{
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::1"},
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::2"},
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::3"},
+		}
+		newDistanceAllocator(nil).assign(toAdd)
+		if toAdd[0].StaticRouteDistance != 1 || toAdd[1].StaticRouteDistance != 2 || toAdd[2].StaticRouteDistance != 3 {
+			t.Errorf("expected distances 1,2,3 got %d,%d,%d",
+				toAdd[0].StaticRouteDistance, toAdd[1].StaticRouteDistance, toAdd[2].StaticRouteDistance)
+		}
+	})
+
+	t.Run("current routes with missing distance field", func(t *testing.T) {
+		current := []UbiquityStaticRoute{
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::1", StaticRouteDistance: 0},
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::2", StaticRouteDistance: 0},
+		}
+		toAdd := []UbiquityStaticRoute{
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::3"},
+		}
+		newDistanceAllocator(current).assign(toAdd)
+		if toAdd[0].StaticRouteDistance != 3 {
+			t.Errorf("expected distance 3 when two existing routes omit distance, got %d", toAdd[0].StaticRouteDistance)
+		}
+	})
+
+	t.Run("fills gap instead of max+1", func(t *testing.T) {
+		current := []UbiquityStaticRoute{
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::1", StaticRouteDistance: 1},
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::2", StaticRouteDistance: 4},
+		}
+		toAdd := []UbiquityStaticRoute{
+			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::3"},
+		}
+		newDistanceAllocator(current).assign(toAdd)
+		if toAdd[0].StaticRouteDistance != 2 {
+			t.Errorf("expected distance 2 (gap fill), got %d", toAdd[0].StaticRouteDistance)
+		}
+	})
+}
+
 // TestCreateHTTPClient tests the HTTP client creation with different configurations
 func TestCreateHTTPClient(t *testing.T) {
 	tests := []struct {
