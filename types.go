@@ -33,6 +33,7 @@ type Route struct {
 // DaemonState holds the current state of discovered routers and Thread mesh prefixes
 type DaemonState struct {
 	mu                   sync.Mutex
+	routeSyncMu          sync.Mutex // serialises UniFi route sync goroutines
 	ThreadBorderRouters  []ThreadBorderRouter
 	ThreadMeshPrefixes   map[string]time.Time // fd:: prefixes from TBR omr= TXT records → last seen time
 	UbiquityConfig       UbiquityConfig

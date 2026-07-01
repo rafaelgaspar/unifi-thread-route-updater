@@ -17,6 +17,9 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		return
 	}
 
+	state.routeSyncMu.Lock()
+	defer state.routeSyncMu.Unlock()
+
 	logInfo("UniFi: syncing static routes...")
 
 	if !state.UbiquityConfig.hasValidSession() {
@@ -85,18 +88,6 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 		logInfo("UniFi: route changes +%d -%d", len(routesToAdd), len(routesToRemove))
 	}
 
-	state.mu.Lock()
-	var newRoutesToAdd []UbiquityStaticRoute
-	for _, route := range routesToAdd {
-		key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
-		if !state.AddedRoutes[key] {
-			newRoutesToAdd = append(newRoutesToAdd, route)
-			state.AddedRoutes[key] = true
-		}
-	}
-	state.mu.Unlock()
-	routesToAdd = newRoutesToAdd
-
 	if len(routesToAdd) > 0 {
 		time.Sleep(2 * time.Second)
 	}
@@ -116,14 +107,34 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 			}
 		} else {
 			logInfo("UniFi: deleted route %s -> %s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+			key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+			state.mu.Lock()
+			delete(state.AddedRoutes, key)
+			state.mu.Unlock()
 		}
 	}
 
-	for _, route := range routesToAdd {
-		if err := addUbiquityStaticRoute(state.UbiquityConfig, route); err != nil {
+	for i := range routesToAdd {
+		route := routesToAdd[i]
+		for attempt := 0; attempt < 5; attempt++ {
+			err := addUbiquityStaticRoute(state.UbiquityConfig, route)
+			if err == nil {
+				logInfo("UniFi: added route %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+				key := fmt.Sprintf("%s->%s", route.StaticRouteNetwork, route.StaticRouteNexthop)
+				state.mu.Lock()
+				state.AddedRoutes[key] = true
+				state.mu.Unlock()
+				break
+			}
+			if strings.Contains(err.Error(), "DestinationNetworkExisted") && attempt < 4 {
+				route.StaticRouteDistance++
+				routesToAdd[i].StaticRouteDistance = route.StaticRouteDistance
+				logWarn("UniFi: distance collision for %s, retrying with distance %d",
+					route.StaticRouteNetwork, route.StaticRouteDistance)
+				continue
+			}
 			logError("UniFi: add failed %s: %v", route.StaticRouteNetwork, err)
-		} else {
-			logInfo("UniFi: added route %s -> %s (%s)", route.StaticRouteNetwork, route.StaticRouteNexthop, route.Name)
+			break
 		}
 	}
 
@@ -279,18 +290,31 @@ func convertToUbiquityRoutes(routes []Route, gatewayDevice string) []UbiquitySta
 	return ubiquityRoutes
 }
 
-// assignRouteDistances sets StaticRouteDistance on routes that need to be added,
-// picking max(existing distances for that prefix) + 1 to avoid collisions.
+// assignRouteDistances sets StaticRouteDistance on routes that need to be added.
+// UniFi requires a unique distance (priority) per destination prefix; multiple
+// nexthops to the same prefix are allowed with different distances.
+//
+// The GET API often omits static-route_distance (zero value), so we also use the
+// number of existing routes per prefix as a floor when picking the next distance.
 func assignRouteDistances(toAdd []UbiquityStaticRoute, current []UbiquityStaticRoute) {
 	maxDistByPrefix := make(map[string]int)
+	countByPrefix := make(map[string]int)
 	for _, r := range current {
+		countByPrefix[r.StaticRouteNetwork]++
 		if r.StaticRouteDistance > maxDistByPrefix[r.StaticRouteNetwork] {
 			maxDistByPrefix[r.StaticRouteNetwork] = r.StaticRouteDistance
 		}
 	}
 	for i := range toAdd {
-		maxDistByPrefix[toAdd[i].StaticRouteNetwork]++
-		toAdd[i].StaticRouteDistance = maxDistByPrefix[toAdd[i].StaticRouteNetwork]
+		prefix := toAdd[i].StaticRouteNetwork
+		next := maxDistByPrefix[prefix]
+		if countByPrefix[prefix] > next {
+			next = countByPrefix[prefix]
+		}
+		next++
+		maxDistByPrefix[prefix] = next
+		countByPrefix[prefix]++
+		toAdd[i].StaticRouteDistance = next
 	}
 }
 
