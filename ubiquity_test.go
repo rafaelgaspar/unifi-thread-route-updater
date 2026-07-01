@@ -199,8 +199,8 @@ func TestCompareRoutesWithGracePeriod(t *testing.T) {
 	}
 }
 
-// TestAssignRouteDistances verifies unique distance assignment per destination prefix.
-func TestAssignRouteDistances(t *testing.T) {
+// TestDistanceAllocator verifies compact distance assignment in 1..N per prefix.
+func TestDistanceAllocator(t *testing.T) {
 	prefix := "fd36:1fa8:d5a::/64"
 
 	t.Run("empty current, batch of three", func(t *testing.T) {
@@ -209,7 +209,7 @@ func TestAssignRouteDistances(t *testing.T) {
 			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::2"},
 			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::3"},
 		}
-		assignRouteDistances(toAdd, nil)
+		newDistanceAllocator(nil).assign(toAdd)
 		if toAdd[0].StaticRouteDistance != 1 || toAdd[1].StaticRouteDistance != 2 || toAdd[2].StaticRouteDistance != 3 {
 			t.Errorf("expected distances 1,2,3 got %d,%d,%d",
 				toAdd[0].StaticRouteDistance, toAdd[1].StaticRouteDistance, toAdd[2].StaticRouteDistance)
@@ -224,13 +224,13 @@ func TestAssignRouteDistances(t *testing.T) {
 		toAdd := []UbiquityStaticRoute{
 			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::3"},
 		}
-		assignRouteDistances(toAdd, current)
+		newDistanceAllocator(current).assign(toAdd)
 		if toAdd[0].StaticRouteDistance != 3 {
 			t.Errorf("expected distance 3 when two existing routes omit distance, got %d", toAdd[0].StaticRouteDistance)
 		}
 	})
 
-	t.Run("current routes with explicit distances", func(t *testing.T) {
+	t.Run("fills gap instead of max+1", func(t *testing.T) {
 		current := []UbiquityStaticRoute{
 			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::1", StaticRouteDistance: 1},
 			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::2", StaticRouteDistance: 4},
@@ -238,9 +238,9 @@ func TestAssignRouteDistances(t *testing.T) {
 		toAdd := []UbiquityStaticRoute{
 			{StaticRouteNetwork: prefix, StaticRouteNexthop: "2001::3"},
 		}
-		assignRouteDistances(toAdd, current)
-		if toAdd[0].StaticRouteDistance != 5 {
-			t.Errorf("expected distance max+1=5, got %d", toAdd[0].StaticRouteDistance)
+		newDistanceAllocator(current).assign(toAdd)
+		if toAdd[0].StaticRouteDistance != 2 {
+			t.Errorf("expected distance 2 (gap fill), got %d", toAdd[0].StaticRouteDistance)
 		}
 	})
 }

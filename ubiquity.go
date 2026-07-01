@@ -82,7 +82,8 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 	routesToAdd, routesToRemove := compareRoutesWithGracePeriod(currentRoutes, desiredRoutes, state.RouteLastSeen, state.UbiquityConfig.RouteGracePeriod)
 	state.mu.Unlock()
 
-	assignRouteDistances(routesToAdd, currentRoutes)
+	distances := newDistanceAllocator(currentRoutes)
+	distances.assign(routesToAdd)
 
 	if len(routesToAdd) > 0 || len(routesToRemove) > 0 {
 		logInfo("UniFi: route changes +%d -%d", len(routesToAdd), len(routesToRemove))
@@ -127,10 +128,18 @@ func updateUbiquityRoutes(state *DaemonState, routes []Route) {
 				break
 			}
 			if strings.Contains(err.Error(), "DestinationNetworkExisted") && attempt < 4 {
-				route.StaticRouteDistance++
-				routesToAdd[i].StaticRouteDistance = route.StaticRouteDistance
+				prefix := route.StaticRouteNetwork
+				distances.markUsed(prefix, route.StaticRouteDistance)
+				next, ok := distances.nextFree(prefix)
+				for !ok {
+					distances.count[prefix]++
+					next, ok = distances.nextFree(prefix)
+				}
+				route.StaticRouteDistance = next
+				routesToAdd[i].StaticRouteDistance = next
+				distances.markUsed(prefix, next)
 				logWarn("UniFi: distance collision for %s, retrying with distance %d",
-					route.StaticRouteNetwork, route.StaticRouteDistance)
+					prefix, next)
 				continue
 			}
 			logError("UniFi: add failed %s: %v", route.StaticRouteNetwork, err)
@@ -290,31 +299,70 @@ func convertToUbiquityRoutes(routes []Route, gatewayDevice string) []UbiquitySta
 	return ubiquityRoutes
 }
 
-// assignRouteDistances sets StaticRouteDistance on routes that need to be added.
-// UniFi requires a unique distance (priority) per destination prefix; multiple
-// nexthops to the same prefix are allowed with different distances.
-//
-// The GET API often omits static-route_distance (zero value), so we also use the
-// number of existing routes per prefix as a floor when picking the next distance.
-func assignRouteDistances(toAdd []UbiquityStaticRoute, current []UbiquityStaticRoute) {
-	maxDistByPrefix := make(map[string]int)
-	countByPrefix := make(map[string]int)
+// distanceAllocator picks the lowest unused distance in 1..N per destination prefix,
+// where N is the total route count for that prefix (existing + pending adds).
+type distanceAllocator struct {
+	used  map[string]map[int]bool
+	count map[string]int
+}
+
+func newDistanceAllocator(current []UbiquityStaticRoute) *distanceAllocator {
+	a := &distanceAllocator{
+		used:  make(map[string]map[int]bool),
+		count: make(map[string]int),
+	}
+	zeroDist := make(map[string]int)
 	for _, r := range current {
-		countByPrefix[r.StaticRouteNetwork]++
-		if r.StaticRouteDistance > maxDistByPrefix[r.StaticRouteNetwork] {
-			maxDistByPrefix[r.StaticRouteNetwork] = r.StaticRouteDistance
+		prefix := r.StaticRouteNetwork
+		a.count[prefix]++
+		if a.used[prefix] == nil {
+			a.used[prefix] = make(map[int]bool)
+		}
+		if r.StaticRouteDistance > 0 {
+			a.used[prefix][r.StaticRouteDistance] = true
+		} else {
+			zeroDist[prefix]++
 		}
 	}
+	// GET often omits static-route_distance; reserve the lowest slots for those routes.
+	for prefix, zeros := range zeroDist {
+		for z := 0; z < zeros; z++ {
+			if d, ok := a.nextFree(prefix); ok {
+				a.markUsed(prefix, d)
+			}
+		}
+	}
+	return a
+}
+
+func (a *distanceAllocator) markUsed(prefix string, distance int) {
+	if a.used[prefix] == nil {
+		a.used[prefix] = make(map[int]bool)
+	}
+	a.used[prefix][distance] = true
+}
+
+// nextFree returns the lowest unused distance in 1..count[prefix].
+func (a *distanceAllocator) nextFree(prefix string) (int, bool) {
+	for d := 1; d <= a.count[prefix]; d++ {
+		if used := a.used[prefix]; used == nil || !used[d] {
+			return d, true
+		}
+	}
+	return 0, false
+}
+
+func (a *distanceAllocator) assign(toAdd []UbiquityStaticRoute) {
 	for i := range toAdd {
 		prefix := toAdd[i].StaticRouteNetwork
-		next := maxDistByPrefix[prefix]
-		if countByPrefix[prefix] > next {
-			next = countByPrefix[prefix]
+		a.count[prefix]++
+		d, ok := a.nextFree(prefix)
+		if !ok {
+			// Should not happen: N routes should always have a free slot in 1..N.
+			d = a.count[prefix]
 		}
-		next++
-		maxDistByPrefix[prefix] = next
-		countByPrefix[prefix]++
-		toAdd[i].StaticRouteDistance = next
+		a.markUsed(prefix, d)
+		toAdd[i].StaticRouteDistance = d
 	}
 }
 
