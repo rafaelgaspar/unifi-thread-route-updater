@@ -3,7 +3,7 @@
 
 replicaCount: 1
 
-# Deployment strategy when networkAttachmentDefinition is disabled (ignored when NAD is enabled — always Recreate).
+# Deployment strategy (use Recreate for pinned macvlan MACs).
 strategy:
   type: RollingUpdate
 
