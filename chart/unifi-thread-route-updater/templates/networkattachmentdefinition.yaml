@@ -1,29 +1,32 @@
-{{- if .Values.vlan16.enabled }}
-{{- if not .Values.vlan16.mac }}
-{{- fail "vlan16.mac is required when vlan16.enabled is true" }}
+{{- if .Values.networkAttachmentDefinition.enabled }}
+{{- if not .Values.networkAttachmentDefinition.master }}
+{{- fail "networkAttachmentDefinition.master is required when networkAttachmentDefinition.enabled is true" }}
+{{- end }}
+{{- if not .Values.networkAttachmentDefinition.mac }}
+{{- fail "networkAttachmentDefinition.mac is required when networkAttachmentDefinition.enabled is true" }}
 {{- end }}
 {{- $ipam := dict "type" "dhcp" }}
-{{- if not .Values.vlan16.dhcp }}
-{{- if not .Values.vlan16.address }}
-{{- fail "vlan16.address is required when vlan16.dhcp is false" }}
+{{- if not .Values.networkAttachmentDefinition.dhcp }}
+{{- if not .Values.networkAttachmentDefinition.address }}
+{{- fail "networkAttachmentDefinition.address is required when networkAttachmentDefinition.dhcp is false" }}
 {{- end }}
-{{- $addr := dict "address" .Values.vlan16.address }}
-{{- if .Values.vlan16.gateway }}
-{{- $_ := set $addr "gateway" .Values.vlan16.gateway }}
+{{- $addr := dict "address" .Values.networkAttachmentDefinition.address }}
+{{- if .Values.networkAttachmentDefinition.gateway }}
+{{- $_ := set $addr "gateway" .Values.networkAttachmentDefinition.gateway }}
 {{- end }}
-{{- $ipam = dict "type" "static" "addresses" (list $addr) "routes" (.Values.vlan16.routes | default list) }}
+{{- $ipam = dict "type" "static" "addresses" (list $addr) "routes" (.Values.networkAttachmentDefinition.routes | default list) }}
 {{- end }}
-{{- $macvlan := dict "type" "macvlan" "master" .Values.vlan16.master "mode" "bridge" "mac" .Values.vlan16.mac "ipam" $ipam }}
+{{- $macvlan := dict "type" "macvlan" "master" .Values.networkAttachmentDefinition.master "mode" "bridge" "mac" .Values.networkAttachmentDefinition.mac "ipam" $ipam }}
 {{- $plugins := list $macvlan }}
-{{- if and .Values.vlan16.tuning .Values.vlan16.tuning.sysctls (not (empty .Values.vlan16.tuning.sysctls)) }}
-{{- $plugins = append $plugins (dict "type" "tuning" "sysctl" .Values.vlan16.tuning.sysctls) }}
+{{- if and .Values.networkAttachmentDefinition.tuning .Values.networkAttachmentDefinition.tuning.sysctls (not (empty .Values.networkAttachmentDefinition.tuning.sysctls)) }}
+{{- $plugins = append $plugins (dict "type" "tuning" "sysctl" .Values.networkAttachmentDefinition.tuning.sysctls) }}
 {{- end }}
 {{- $plugins = append $plugins (dict "type" "sbr") }}
 {{- $config := dict "cniVersion" "0.4.0" "plugins" $plugins }}
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: {{ include "unifi-thread-route-updater.vlan16.name" . }}
+  name: {{ include "unifi-thread-route-updater.networkAttachmentDefinition.name" . }}
   labels:
     {{- include "unifi-thread-route-updater.labels" . | nindent 4 }}
 spec:

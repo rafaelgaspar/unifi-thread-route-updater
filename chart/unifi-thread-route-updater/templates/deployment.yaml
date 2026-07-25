@@ -14,8 +14,8 @@ spec:
   template:
     metadata:
       annotations:
-        {{- if .Values.vlan16.enabled }}
-        k8s.v1.cni.cncf.io/networks: {{ include "unifi-thread-route-updater.vlan16.networksAnnotation" . | quote }}
+        {{- if .Values.networkAttachmentDefinition.enabled }}
+        k8s.v1.cni.cncf.io/networks: {{ include "unifi-thread-route-updater.networkAttachmentDefinition.networksAnnotation" . | quote }}
         {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
