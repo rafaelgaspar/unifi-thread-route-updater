@@ -41,11 +41,13 @@ resources:
     cpu: 50m
     memory: 64Mi
 
-# VLAN16 macvlan (Multus) for direct IoT network access.
-vlan16:
+# Optional Multus macvlan attachment (example — customize for your cluster).
+networkAttachmentDefinition:
   enabled: true
+  master: br16
   mac: "02:00:00:16:00:42"
   dhcp: true
+  gateway: 192.168.16.1
 
 # Enable monitoring (requires Prometheus operator)
 serviceMonitor:
