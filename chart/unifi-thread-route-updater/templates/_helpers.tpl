@@ -61,3 +61,17 @@ Create the name of the service account to use
 {{- end }}
 {{- end }}
 
+{{/*
+VLAN16 Multus NAD name (defaults to <fullname>-vlan16).
+*/}}
+{{- define "unifi-thread-route-updater.vlan16.name" -}}
+{{- default (printf "%s-vlan16" (include "unifi-thread-route-updater.fullname" .)) .Values.vlan16.name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Multus networks annotation value: <nad-name>@<interface>.
+*/}}
+{{- define "unifi-thread-route-updater.vlan16.networksAnnotation" -}}
+{{- printf "%s@%s" (include "unifi-thread-route-updater.vlan16.name" .) .Values.vlan16.interface }}
+{{- end }}
+

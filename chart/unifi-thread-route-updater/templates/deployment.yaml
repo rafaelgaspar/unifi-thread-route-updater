@@ -13,10 +13,13 @@ spec:
       {{- include "unifi-thread-route-updater.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        {{- if .Values.vlan16.enabled }}
+        k8s.v1.cni.cncf.io/networks: {{ include "unifi-thread-route-updater.vlan16.networksAnnotation" . | quote }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "unifi-thread-route-updater.selectorLabels" . | nindent 8 }}
     spec:

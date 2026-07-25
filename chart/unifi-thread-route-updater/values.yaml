@@ -23,6 +23,25 @@ serviceAccount:
 
 podAnnotations: {}
 
+# Optional VLAN16 macvlan attachment (Multus NAD + pod annotation).
+# Requires kube-system/cni-dhcp when dhcp is true, plus a matching UniFi reservation.
+vlan16:
+  enabled: false
+  # NAD name; defaults to <release-name>-vlan16.
+  name: ""
+  # Pod interface name for the secondary network.
+  interface: eth1
+  master: br16
+  # Pinned locally-administered MAC — required when enabled.
+  mac: ""
+  dhcp: true
+  # Static IPAM (when dhcp is false).
+  address: ""
+  gateway: 192.168.16.1
+  routes: []
+  tuning:
+    sysctls: {}
+
 podSecurityContext:
   fsGroup: 1001
 
