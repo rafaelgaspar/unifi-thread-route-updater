@@ -3,6 +3,10 @@
 
 replicaCount: 1
 
+# Deployment strategy when networkAttachmentDefinition is disabled (ignored when NAD is enabled — always Recreate).
+strategy:
+  type: RollingUpdate
+
 image:
   repository: ghcr.io/rafaelgaspar/unifi-thread-route-updater
   pullPolicy: IfNotPresent

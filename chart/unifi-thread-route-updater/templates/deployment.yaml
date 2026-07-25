@@ -11,6 +11,13 @@ spec:
   selector:
     matchLabels:
       {{- include "unifi-thread-route-updater.selectorLabels" . | nindent 6 }}
+  {{- if .Values.networkAttachmentDefinition.enabled }}
+  strategy:
+    type: Recreate
+  {{- else if .Values.strategy }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       annotations:
