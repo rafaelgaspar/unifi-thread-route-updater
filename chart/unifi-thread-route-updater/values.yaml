@@ -3,6 +3,10 @@
 
 replicaCount: 1
 
+# Deployment strategy (use Recreate for pinned macvlan MACs).
+strategy:
+  type: RollingUpdate
+
 image:
   repository: ghcr.io/rafaelgaspar/unifi-thread-route-updater
   pullPolicy: IfNotPresent
