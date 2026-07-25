@@ -41,6 +41,12 @@ resources:
     cpu: 50m
     memory: 64Mi
 
+# VLAN16 macvlan (Multus) for direct IoT network access.
+vlan16:
+  enabled: true
+  mac: "02:00:00:16:00:42"
+  dhcp: true
+
 # Enable monitoring (requires Prometheus operator)
 serviceMonitor:
   enabled: false

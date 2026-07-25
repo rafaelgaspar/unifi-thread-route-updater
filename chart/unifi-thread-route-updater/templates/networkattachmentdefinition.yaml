@@ -1,0 +1,32 @@
+{{- if .Values.vlan16.enabled }}
+{{- if not .Values.vlan16.mac }}
+{{- fail "vlan16.mac is required when vlan16.enabled is true" }}
+{{- end }}
+{{- $ipam := dict "type" "dhcp" }}
+{{- if not .Values.vlan16.dhcp }}
+{{- if not .Values.vlan16.address }}
+{{- fail "vlan16.address is required when vlan16.dhcp is false" }}
+{{- end }}
+{{- $addr := dict "address" .Values.vlan16.address }}
+{{- if .Values.vlan16.gateway }}
+{{- $_ := set $addr "gateway" .Values.vlan16.gateway }}
+{{- end }}
+{{- $ipam = dict "type" "static" "addresses" (list $addr) "routes" (.Values.vlan16.routes | default list) }}
+{{- end }}
+{{- $macvlan := dict "type" "macvlan" "master" .Values.vlan16.master "mode" "bridge" "mac" .Values.vlan16.mac "ipam" $ipam }}
+{{- $plugins := list $macvlan }}
+{{- if and .Values.vlan16.tuning .Values.vlan16.tuning.sysctls (not (empty .Values.vlan16.tuning.sysctls)) }}
+{{- $plugins = append $plugins (dict "type" "tuning" "sysctl" .Values.vlan16.tuning.sysctls) }}
+{{- end }}
+{{- $plugins = append $plugins (dict "type" "sbr") }}
+{{- $config := dict "cniVersion" "0.4.0" "plugins" $plugins }}
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: {{ include "unifi-thread-route-updater.vlan16.name" . }}
+  labels:
+    {{- include "unifi-thread-route-updater.labels" . | nindent 4 }}
+spec:
+  config: |
+{{ $config | toPrettyJson | indent 4 }}
+{{- end }}
