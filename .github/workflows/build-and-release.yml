@@ -68,6 +68,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
 
     steps:
     - name: Checkout code
@@ -85,6 +87,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build and push image (SHA tag)
+      id: build
       uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
       with:
         context: .
@@ -178,6 +181,9 @@ jobs:
       with:
         version: '4.2.3'
 
+    - name: Set up ORAS
+      uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+
     - name: Log in to Container Registry
       uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c # v4
       with:
@@ -185,10 +191,16 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Package and push Helm chart
+    - name: Package Helm chart
+      run: helm package chart/unifi-thread-route-updater --destination ./packages
+
+    - name: Attach Helm chart to image as OCI layer
       run: |
-        helm package chart/unifi-thread-route-updater --destination ./packages
-        helm push ./packages/unifi-thread-route-updater-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository }}/chart
+        CHART_FILE=$(ls ./packages/unifi-thread-route-updater-*.tgz)
+        oras attach \
+          --artifact-type application/vnd.cncf.helm.chart.content.v1.tar+gzip \
+          "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-image.outputs.digest }}" \
+          "${CHART_FILE}:application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 
   release-go-binaries:
     needs: [build-image, lint-chart, security-scan]
