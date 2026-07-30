@@ -128,7 +128,7 @@ jobs:
       with:
         sarif_file: 'trivy-results.sarif'
 
-  push-image:
+  push-image-and-chart:
     needs: [build-image, lint-chart, security-scan]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -137,6 +137,9 @@ jobs:
       packages: write
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
     - name: Log in to Container Registry
       uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c # v4
       with:
@@ -164,18 +167,6 @@ jobs:
           docker buildx imagetools create --tag "$TAG" "$SOURCE"
         done
 
-  publish-helmchart:
-    needs: [build-image, lint-chart, security-scan]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
     - name: Set up Helm
       uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
       with:
@@ -183,13 +174,6 @@ jobs:
 
     - name: Set up ORAS
       uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c # v4
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Package Helm chart
       run: helm package chart/unifi-thread-route-updater --destination ./packages
