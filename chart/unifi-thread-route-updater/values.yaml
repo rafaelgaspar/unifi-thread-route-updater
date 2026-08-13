@@ -10,7 +10,7 @@ strategy:
 image:
   repository: ghcr.io/rafaelgaspar/unifi-thread-route-updater
   pullPolicy: IfNotPresent
-  tag: ""
+  tag: "@sha256:bc351c04acb91d1285c011268dcee4bef3f73e9a0dd798c9407930bd8d450b3a"
 
 imagePullSecrets: []
 nameOverride: ""
