@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Renovate for unifi-thread-route-updater — Go modules, Dockerfile base image + syntax pin, Helm chart deps (if any), GitHub Actions pins.",
+  "description": "Renovate for unifi-thread-route-updater — Go modules, Dockerfile base image + syntax pin, Helm chart deps (if any), GitHub Actions pins. Excludes the project's own published image (ghcr.io/rafaelgaspar/unifi-thread-route-updater), which is versioned by the release pipeline, not Renovate.",
   "extends": [
     "config:best-practices",
     ":semanticCommits",
@@ -10,6 +10,7 @@
   "timezone": "Europe/Berlin",
   "dependencyDashboard": true,
   "dependencyDashboardTitle": "Renovate Dependency Dashboard - unifi-thread-route-updater",
+  "ignoreDeps": ["ghcr.io/rafaelgaspar/unifi-thread-route-updater"],
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 4am on monday"]
