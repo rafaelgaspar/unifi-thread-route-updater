@@ -1,17 +1,37 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate for unifi-thread-route-updater — Go modules, Dockerfile base image + syntax pin, Helm chart deps (if any), GitHub Actions pins.",
   "extends": [
-    "config:recommended",
+    "config:best-practices",
     ":semanticCommits",
     ":label(renovate)",
     "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Europe/Berlin",
   "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Renovate Dependency Dashboard - unifi-thread-route-updater",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on monday"]
+  },
   "packageRules": [
     {
+      "description": "All non-major Go module updates in one PR; majors stay separate for manual review",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Go modules",
+      "groupSlug": "go-modules"
+    },
+    {
+      "description": "Dockerfile base image + syntax pin updates in one PR",
+      "matchManagers": ["dockerfile"],
+      "groupName": "Dockerfile pins",
+      "groupSlug": "dockerfile-pins"
+    },
+    {
+      "description": "All non-major GitHub Actions updates (tags, digests) in one PR; majors stay separate",
       "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["major", "minor", "patch", "digest"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "GitHub Actions",
       "groupSlug": "github-actions"
     },
@@ -20,6 +40,11 @@
       "matchUpdateTypes": ["pin"],
       "groupName": "GitHub Actions pin digests",
       "groupSlug": "github-actions-pin"
+    },
+    {
+      "description": "Automerge non-major updates once CI passes; majors stay manual",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "automerge": true
     }
   ],
   "prHourlyLimit": 0,

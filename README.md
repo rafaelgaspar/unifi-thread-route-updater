@@ -31,11 +31,11 @@ A Go daemon that continuously monitors your network for Matter devices and Threa
 
 ### Option 1: Kubernetes Deployment (Recommended)
 
-1. Install the Helm chart from OCI:
+1. Install the Helm chart from OCI (0.1.47+ — earlier releases only published the chart as an OCI referrer attached to the image, not as a directly-installable tagged artifact; see [Releases](https://github.com/rafaelgaspar/unifi-thread-route-updater/releases) for the current version):
 
 ```bash
-helm install unifi-thread-route-updater oci://ghcr.io/rafaelgaspar/unifi-thread-route-updater/chart/unifi-thread-route-updater \
-  --version 0.1.1 \
+helm install unifi-thread-route-updater oci://ghcr.io/rafaelgaspar/unifi-thread-route-updater/charts/unifi-thread-route-updater \
+  --version 0.1.47 \
   --namespace thread-route-updater \
   --create-namespace \
   --values values.yaml
@@ -60,8 +60,8 @@ secrets:
 3. Or upgrade an existing installation:
 
 ```bash
-helm upgrade unifi-thread-route-updater oci://ghcr.io/rafaelgaspar/unifi-thread-route-updater/chart/unifi-thread-route-updater \
-  --version 0.1.1 \
+helm upgrade unifi-thread-route-updater oci://ghcr.io/rafaelgaspar/unifi-thread-route-updater/charts/unifi-thread-route-updater \
+  --version 0.1.47 \
   --namespace thread-route-updater \
   --values values.yaml
 ```
@@ -76,7 +76,7 @@ docker run -d \
   -e UBIQUITY_ROUTER_USERNAME="thread-route-updater" \
   -e UBIQUITY_ROUTER_PASSWORD="your-password" \
   -e UBIQUITY_ROUTER_ENABLED=true \
-  ghcr.io/rafaelgaspar/thread-route-updater:latest
+  ghcr.io/rafaelgaspar/unifi-thread-route-updater:latest
 ```
 
 ### Option 3: Local Development
@@ -84,8 +84,8 @@ docker run -d \
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/rafaelgaspar/ubiquity-thread-route-updater.git
-cd ubiquity-thread-route-updater
+git clone https://github.com/rafaelgaspar/unifi-thread-route-updater.git
+cd unifi-thread-route-updater
 ```
 
 2. Build and run:
@@ -149,7 +149,7 @@ The application can be deployed in Kubernetes clusters using Helm charts.
 replicaCount: 1
 
 image:
-  repository: ghcr.io/rafaelgaspar/thread-route-updater
+  repository: ghcr.io/rafaelgaspar/unifi-thread-route-updater
   tag: "latest"
   pullPolicy: IfNotPresent
 
@@ -358,7 +358,7 @@ Set these environment variables to enable Ubiquity integration:
 
 ## Dependencies
 
-- Go 1.21+
+- Go 1.26+
 - `github.com/grandcat/zeroconf` - mDNS service discovery
 
 ## Troubleshooting
@@ -369,7 +369,7 @@ Set these environment variables to enable Ubiquity integration:
 - **mDNS issues**: Check that mDNS is working on your network
 - **IPv6 issues**: Verify that your devices have IPv6 addresses
 - **Permission issues**: Ensure the daemon has network access permissions
-- **Build issues**: Make sure you have Go 1.21+ installed
+- **Build issues**: Make sure you have Go 1.26+ installed
 
 ### Log Analysis
 
@@ -419,7 +419,7 @@ While the code has been tested and is functional, please:
 
 ### Contributing
 
-Contributions are welcome! This project serves as a learning exercise, so feel free to:
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for dev setup, coding conventions, and how releases work. This project serves as a learning exercise, so feel free to:
 
 - **Report issues** and bugs
 - **Suggest improvements** and features
