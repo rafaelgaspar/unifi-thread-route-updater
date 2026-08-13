@@ -189,10 +189,15 @@ jobs:
     # Also push as a standalone, semver-tagged artifact — the attach form above
     # is digest-pinned to one image and needs Referrers-API-aware tooling to
     # find; this is what README's `helm install oci://...` command actually needs.
+    # `helm push` only tags with Chart.yaml's own version, so alias it to
+    # `latest` too (mirrors the image's own :latest tag) via `oras tag`, which
+    # just adds a second tag to the same manifest — no re-upload.
     - name: Push standalone tagged chart
       run: |
         CHART_FILE=$(ls ./packages/unifi-thread-route-updater-*.tgz)
+        VERSION="${GITHUB_REF_NAME#v}"
         helm push "${CHART_FILE}" "oci://${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/charts"
+        oras tag "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/charts/unifi-thread-route-updater:${VERSION}" latest
 
   release-go-binaries:
     needs: [build-image, lint-chart, security-scan]
