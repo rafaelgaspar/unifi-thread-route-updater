@@ -117,12 +117,21 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    # scanners: vuln only — secret scanning is already covered by gitleaks.yaml,
+    # and misconfig scanning here would flag this repo's own workflow files
+    # (unrelated to what's actually inside the image). ignore-unfixed +
+    # severity drop the large volume of low/unfixed base-image CVEs that
+    # Renovate/apk upgrade can't do anything about, so what lands in the
+    # Security tab is limited to real, actionable HIGH/CRITICAL findings.
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       with:
         image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
         format: 'sarif'
         output: 'trivy-results.sarif'
+        scanners: 'vuln'
+        severity: 'CRITICAL,HIGH'
+        ignore-unfixed: 'true'
         exit-code: '0'
 
     - name: Upload Trivy scan results to GitHub Security tab
