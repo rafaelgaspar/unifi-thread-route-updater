@@ -8,8 +8,10 @@
     "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Europe/Berlin",
-  "dependencyDashboard": true,
-  "dependencyDashboardTitle": "Renovate Dependency Dashboard - unifi-thread-route-updater",
+  "dependencyDashboard": {
+    "enabled": true,
+    "title": "Renovate Dependency Dashboard - unifi-thread-route-updater"
+  },
   "ignoreDeps": ["ghcr.io/rafaelgaspar/unifi-thread-route-updater"],
   "lockFileMaintenance": {
     "enabled": true,
